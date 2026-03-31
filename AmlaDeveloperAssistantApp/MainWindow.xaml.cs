@@ -12,6 +12,7 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -79,13 +80,13 @@ namespace AmlaDeveloperAssistantApp
 
             // fire and forget (non-blocking)
             var bubble = AddAiMessage("🔄 Initializing AI...");
-            var textBlock = (TextBlock)bubble.Child;
+            var textBlock = (System.Windows.Controls.RichTextBox)bubble.Child;
 
             
             WarmUpModels(textBlock);
            
         }
-        private async Task WarmUpModels(TextBlock? uiText = null)
+        private async Task WarmUpModels(System.Windows.Controls.RichTextBox? uiText = null)
         {
             SendButton.IsEnabled = false;
             QuestionBox.IsEnabled = false;
@@ -95,8 +96,7 @@ namespace AmlaDeveloperAssistantApp
             {
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
-                    uiText.Text = "🔄 Warming up AI models...\nThis may take a moment, but it ensures faster responses later on.\n\n";
-
+                    SetUIMessage(uiText, "🔄 Warming up AI models...\nThis may take a moment, but it ensures faster responses later on.\n");
                 });
             }
             try
@@ -179,14 +179,21 @@ namespace AmlaDeveloperAssistantApp
                 QuestionBox.Focus();
             }
         }
-        private void UpdateUI(TextBlock? uiText, string message)
+
+        private void UpdateUI(System.Windows.Controls.RichTextBox? uiText, string message)
         {
             if (uiText == null) return;
 
             System.Windows.Application.Current.Dispatcher.Invoke(() =>
             {
-                uiText.Text += message + "\n";
+                AppendUIMessage(uiText, message);
             });
+        }
+
+        private void SetUpdateUIMessage(System.Windows.Controls.RichTextBox? uiText, string message)
+        {
+            if (uiText == null) return;
+            SetUIMessage(uiText, message);
         }
 
         private void SaveChatHistory()
@@ -237,12 +244,52 @@ namespace AmlaDeveloperAssistantApp
 
         private Border AddAiMessage(string text)
         {
-            var txt = new TextBlock
+            var richTextBox = new System.Windows.Controls.RichTextBox
             {
-                Text = text,
+                IsReadOnly = true,
+                BorderThickness = new Thickness(0),
+                Background = Brushes.Transparent,
                 Foreground = Brushes.White,
-                TextWrapping = TextWrapping.Wrap,
-                MaxWidth = 240
+                Padding = new Thickness(0),
+                Margin = new Thickness(0),
+                IsDocumentEnabled = true, // enables hyperlink click
+                MaxWidth = 240,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden
+            };
+
+            var paragraph = new Paragraph();
+            var urlRegex = new Regex(@"(https?://[\w\-._~:/?#[\]@!$&'()*+,;=%]+)");
+            int lastIndex = 0;
+            foreach (Match match in urlRegex.Matches(text))
+            {
+                // Add text before the link
+                if (match.Index > lastIndex)
+                {
+                    paragraph.Inlines.Add(new Run(text.Substring(lastIndex, match.Index - lastIndex)));
+                }
+                // Add the hyperlink
+                var link = new Hyperlink(new Run(match.Value))
+                {
+                    NavigateUri = new Uri(match.Value)
+                };
+                link.RequestNavigate += (s, e) =>
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+                };
+                paragraph.Inlines.Add(link);
+                lastIndex = match.Index + match.Length;
+            }
+            // Add any remaining text
+            if (lastIndex < text.Length)
+            {
+                paragraph.Inlines.Add(new Run(text.Substring(lastIndex)));
+            }
+
+            richTextBox.Document = new FlowDocument(paragraph)
+            {
+                PagePadding = new Thickness(0),
+                Background = Brushes.Transparent
             };
 
             var bubble = new Border
@@ -252,7 +299,7 @@ namespace AmlaDeveloperAssistantApp
                 Padding = new Thickness(10),
                 Margin = new Thickness(5, 5, 60, 5),
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
-                Child = txt
+                Child = richTextBox
             };
 
             ChatPanel.Children.Add(bubble);
@@ -305,8 +352,8 @@ namespace AmlaDeveloperAssistantApp
                 {
                     context = await SearchVectors(question);
                 }
-                var textBlock = (TextBlock)aiBubble.Child;
-                textBlock.Text = "⚡ Thinking deeper...🧠\n\n"; // clear "Thinking..."
+                var textBlock = (System.Windows.Controls.RichTextBox)aiBubble.Child;
+                SetUIMessage(textBlock, "⚡ Thinking deeper...🧠\n"); // clear "Thinking..."
                 await CallOllamaStreaming(question, context, isSimple, textBlock);
             }
             catch (Exception ex)
@@ -339,6 +386,27 @@ namespace AmlaDeveloperAssistantApp
             }
             QuestionBox.IsEnabled = isEnabled;
             SendButton.IsEnabled = true; // ✅ IMPORTANT: keep button enabled always
+        }
+
+        // Helper to replace all content in RichTextBox (like uiText.Text = ...)
+        private void SetUIMessage(System.Windows.Controls.RichTextBox? uiText, string message)
+        {
+            if (uiText == null) return;
+            uiText.Document.Blocks.Clear();
+            uiText.Document.Blocks.Add(new Paragraph(new Run(message)));
+        }
+
+        // Helper to append content in RichTextBox (like uiText.Text += ...)
+        private void AppendUIMessage(System.Windows.Controls.RichTextBox? uiText, string message)
+        {
+            if (uiText == null) return;
+            var para = uiText.Document.Blocks.LastBlock as Paragraph;
+            if (para == null)
+            {
+                para = new Paragraph();
+                uiText.Document.Blocks.Add(para);
+            }
+            para.Inlines.Add(new Run(message + "\n"));
         }
 
         private bool IsSimpleQuery(string q)
@@ -444,7 +512,7 @@ namespace AmlaDeveloperAssistantApp
             }
 
             var aiBubble = AddAiMessage("Indexing project files...");
-            var textBlock = (TextBlock)aiBubble.Child;
+            var textBlock = (System.Windows.Controls.RichTextBox)aiBubble.Child;
 
             var vectors = await IndexRepository(textBlock);
 
@@ -455,14 +523,14 @@ namespace AmlaDeveloperAssistantApp
                 JsonSerializer.Serialize(vectors)
             );
 
-            textBlock.Text = $"Project index built. Chunks: {vectors.Count}";
+            SetUIMessage(textBlock, $"Project index built. Chunks: {vectors.Count}");
         }
 
         // REFRESH KB INDEX
         private async void OnRefreshKB(object sender, RoutedEventArgs e)
         {
             var aiBubble = AddAiMessage("Indexing knowledge base...");
-            var textBlock = (TextBlock)aiBubble.Child;
+            var textBlock = (System.Windows.Controls.RichTextBox)aiBubble.Child;
             var vectors = await IndexKnowledgeBase(textBlock);
 
             Directory.CreateDirectory(Path.GetDirectoryName(kbVectorPath)!);
@@ -472,11 +540,11 @@ namespace AmlaDeveloperAssistantApp
                 JsonSerializer.Serialize(vectors)
             );
 
-            textBlock.Text = $"KB index built. Chunks: {vectors.Count}";
+            SetUIMessage(textBlock, $"KB index built. Chunks: {vectors.Count}");
         }
 
         // INDEX REPOSITORY
-        private async Task<List<VectorChunk>> IndexRepository(TextBlock? uiText = null)
+        private async Task<List<VectorChunk>> IndexRepository(System.Windows.Controls.RichTextBox? uiText = null)
         {
             var result = new List<VectorChunk>();
 
@@ -556,11 +624,10 @@ namespace AmlaDeveloperAssistantApp
                                 var totalFiles = files.Count();
                                 var processedFiles = totalFiles - remainingFilesCount;
                                 var percent = (int)((processedFiles * 100.0) / totalFiles);
-
-                                uiText.Text =
+                                SetUIMessage(uiText,
                                     $"📂 Files: {processedFiles}/{totalFiles} ({percent}%)\n" +
                                     $"🧩 Chunks: {result.Count} processed\n" +
-                                    $"⚙️ Processing: \n\n{file}";
+                                    $"⚙️ Processing: \n\n{file}");
                             }));
                         }
                     }
@@ -579,7 +646,7 @@ namespace AmlaDeveloperAssistantApp
         }
 
         // INDEX KNOWLEDGE BASE WEBSITE
-        private async Task<List<VectorChunk>> IndexKnowledgeBase(TextBlock? uiText = null)
+        private async Task<List<VectorChunk>> IndexKnowledgeBase(System.Windows.Controls.RichTextBox? uiText = null)
         {
             var result = new List<VectorChunk>();
 
@@ -683,7 +750,7 @@ namespace AmlaDeveloperAssistantApp
                                     {
                                         System.Windows.Application.Current.Dispatcher.Invoke(() =>
                                         {
-                                            uiText.Text = " chunks processed : " + result.Count + "\n source : " + url;
+                                            SetUIMessage(uiText, " chunks processed : " + result.Count + "\n source : " + url);
                                         });
                                     }
                                 }
@@ -863,7 +930,7 @@ namespace AmlaDeveloperAssistantApp
         }
 
         // CALL OLLAMA
-        private async Task<string> CallOllamaStreaming(string question, string context, bool isSimple, TextBlock? uiText = null)
+        private async Task<string> CallOllamaStreaming(string question, string context, bool isSimple, System.Windows.Controls.RichTextBox? uiText = null)
         {
             string prompt;
             string modelToUse = "phi3"; // ✅ fixed
@@ -970,7 +1037,7 @@ namespace AmlaDeveloperAssistantApp
                 {
                     System.Windows.Application.Current.Dispatcher.Invoke(() =>
                     {
-                        uiText.Text = string.Empty;
+                        SetUIMessage(uiText, string.Empty); // ✅ show model being used
                     });
                 }
                 using var stream = await response.Content.ReadAsStreamAsync();
@@ -1003,13 +1070,13 @@ namespace AmlaDeveloperAssistantApp
                             counter++;
 
                             // 🔥 Throttle UI updates (VERY IMPORTANT)
-                            if (uiText != null && counter % 3 == 0)
+                            if (uiText != null && counter % 2 == 0)
                             {
                                 var textSnapshot = result.ToString();
 
                                 await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                                 {
-                                    uiText.Text = textSnapshot;
+                                    SetUIMessage(uiText, textSnapshot);
                                 }, System.Windows.Threading.DispatcherPriority.Background);
                             }
                         }
@@ -1029,7 +1096,7 @@ namespace AmlaDeveloperAssistantApp
 
                     await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
                     {
-                        uiText.Text = finalText;
+                        SetUIMessage(uiText, finalText); // ✅ show final answer
                     });
                 }
                 _chatHistory.Add(new ChatMessage
@@ -1047,7 +1114,7 @@ namespace AmlaDeveloperAssistantApp
                 {
                     System.Windows.Application.Current.Dispatcher.Invoke(() =>
                     {
-                        uiText.Text = "⚠️ Request timed out. Try again or refine your question.";
+                        SetUIMessage(uiText, "⚠️ Request timed out. Try again or refine your question.");
                     });
                 }
             }
