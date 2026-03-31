@@ -320,7 +320,7 @@ namespace AmlaDeveloperAssistantApp
                 QuestionBox.Focus();
             }
         }
-
+        
         private void SetUiEnabled(bool isEnabled, string buttontext = "")
         { 
             if (isEnabled)
@@ -331,7 +331,7 @@ namespace AmlaDeveloperAssistantApp
             else
             { 
                 SendButton.Content = "🛑 Stop Thinking..💭";
-                SendButton.Width = 110; // auto
+                SendButton.Width = 120; // auto
             }
             if(!string.IsNullOrEmpty(buttontext))
             {
