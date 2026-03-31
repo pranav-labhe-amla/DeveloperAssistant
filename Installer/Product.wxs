@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Product Id="*" Name="AmlaDeveloperAssistant" Language="1033" Version="1.0.0.0" Manufacturer="YourCompany" UpgradeCode="PUT-GUID-HERE">
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perMachine" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate />
+
+    <Feature Id="ProductFeature" Title="AmlaDeveloperAssistant" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Product>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="ProgramFilesFolder">
+        <Directory Id="INSTALLFOLDER" Name="AmlaDeveloperAssistant">
+          <!-- Place your application files here -->
+        </Directory>
+      </Directory>
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <!-- Add your application files as components here -->
+      <!-- Example: <Component Id="MainExe" Guid="*"> <File Source="AmlaDeveloperAssistantApp.exe" /> </Component> -->
+
+      <!-- Ollama Installer Component -->
+      <Component Id="OllamaInstaller" Guid="*">
+        <File Id="OllamaSetupExe" Source="OllamaSetup.exe" KeyPath="yes"/>
+      </Component>
+      <ComponentRef Id="OllamaInstaller" />
+
+      <!-- Custom action to run Ollama installer after app install -->
+      <CustomAction Id="RunOllamaInstaller" FileKey="OllamaSetupExe" ExeCommand="" Execute="deferred" Return="check" />
+      <InstallExecuteSequence>
+        <Custom Action="RunOllamaInstaller" After="InstallFiles">NOT Installed</Custom>
+      </InstallExecuteSequence>
+
+      <!-- Add a custom action to run the PowerShell script after Ollama install -->
+      <!-- Example: <CustomAction Id="PullOllamaModels" FileKey="pull_ollama_models.ps1" ExeCommand="-ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]pull_ollama_models.ps1&quot;" Execute="deferred" Return="check" /> -->
+      <!-- Example: <InstallExecuteSequence><Custom Action="PullOllamaModels" After="RunOllamaInstaller">NOT Installed</Custom></InstallExecuteSequence> -->
+    </ComponentGroup>
+  </Fragment>
+</Wix>

@@ -26,7 +26,27 @@ AmlaDeveloperAssistant is a Windows desktop application (WPF, .NET 10) that acts
 		```
 - Internet connection (for knowledge base crawling)
 
+
 ## Getting Started
+
+
+### Option 1: Using the Installer (Recommended)
+
+1. **Build the Installer Project:**
+	- Open the solution in Visual Studio 2022 or later.
+	- Build the `Installer` project (WiX Toolset required).
+	- The `Installer` folder now contains:
+	  - A sample WiX installer script (`Product.wxs`) with clear comments and placeholders.
+	  - A PowerShell script (`pull_ollama_models.ps1`) to automate model downloads.
+	  - A step-by-step beginner guide in `Installer/README.md`.
+
+2. **Run the Installer:**
+	- The generated MSI will install AmlaDeveloperAssistant, Ollama, and pull required models automatically.
+	- Follow on-screen instructions.
+
+See `Installer/README.md` for a full, beginner-friendly walkthrough and details on adding your files.
+
+### Option 2: Manual Setup
 
 1. **Clone the repository:**
 	```
