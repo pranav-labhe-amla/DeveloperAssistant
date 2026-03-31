@@ -17,6 +17,13 @@ AmlaDeveloperAssistant is a Windows desktop application (WPF, .NET 10) that acts
 - Windows 10 or later
 - [.NET 10 SDK](https://dotnet.microsoft.com/download)
 - [Ollama](https://ollama.com/) running locally with supported models (`phi3`, `deepseek-coder:6.7b`, `nomic-embed-text`)
+	- **Install Ollama:** [https://ollama.com/download](https://ollama.com/download)
+	- **Pull required models:**
+		```sh
+		ollama pull phi3
+		ollama pull deepseek-coder:6.7b
+		ollama pull nomic-embed-text
+		```
 - Internet connection (for knowledge base crawling)
 
 ## Getting Started
