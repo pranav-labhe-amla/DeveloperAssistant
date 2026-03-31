@@ -33,6 +33,57 @@ namespace AmlaDeveloperAssistantApp
     {
         private string projectRoot = @"D:\10x";
 
+        // AI-based intent detection for opening znode sphere
+        private async Task<bool> IsOpenSphereIntentAI(string question)
+        {
+            try
+            {
+                var prompt = $@"
+                Classify the user query intent.
+
+                Return ONLY one word:
+                OPENSPHERE or OTHER
+
+                OPENSPHERE includes:
+                - open znode sphere
+                - run sphere
+                - launch znode-sphere-tool
+                - start sphere
+                - any intent to open or run znode sphere tool
+
+                Everything else is OTHER.
+
+                Query:
+                {question}
+                ";
+
+                var req = new
+                {
+                    model = "phi3",
+                    prompt = prompt,
+                    stream = false
+                };
+
+                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+                var res = await http.PostAsync(
+                    "http://localhost:11434/api/generate",
+                    new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
+                    _currentCts.Token
+                );
+
+                var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+
+                var output = json.RootElement.GetProperty("response")
+                    .GetString()?.Trim().ToUpper();
+
+                return output == "OPENSPHERE";
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private readonly string repoVectorPath;
         private readonly string kbVectorPath;
 
@@ -332,21 +383,31 @@ namespace AmlaDeveloperAssistantApp
             SetUiEnabled(false);
             try
             {
-
                 AddUserMessage(question);
-
                 QuestionBox.Text = "";
-
                 var aiBubble = AddAiMessage("Thinking...💭 ");
 
+                // Check for open sphere intent using AI
+                if(await IsOpenSphereIntentAI(question))
+                {
+                    // Launch znode-sphere-tool in a new command prompt
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "cmd.exe",
+                        Arguments = "/k znode-sphere-tool",
+                        UseShellExecute = true
+                    });
+                    AddUserMessage(question);
+                    AddAiMessage("🌌 Launched znode-sphere-tool in a new command prompt.");
+                    QuestionBox.Text = "";
+                    return;
+                }
                 bool isSimple = IsSimpleQuery(question);
-
                 // fallback to AI if uncertain
                 if (!isSimple && question.Length < 25)
                 {
                     isSimple = await IsSimpleQueryAI(question);
                 }
-
                 string context = "";
                 if (!isSimple)
                 {
