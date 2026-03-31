@@ -1,0 +1,11 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+**/.vs/**
+**/bin/**
+!**/DevExpress*/**
+**/obj/**
+**/Scripts/**/*.js.map
+*.user
+/ZnodeMultifront/Projects/Znode.Engine.Api/Data/Media
