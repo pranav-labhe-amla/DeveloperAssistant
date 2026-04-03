@@ -76,18 +76,27 @@
         </ScrollViewer>
 
         <!-- QUESTION INPUT -->
-        <TextBox x:Name="QuestionBox"
-         Grid.Row="2"
-         MinHeight="32"
-         MaxHeight="200"
-         AcceptsReturn="True"
-         VerticalScrollBarVisibility="Auto"
-         Background="#2D2D30"
-         Foreground="White"
-         BorderBrush="#444"
-         Padding="6"
-         PreviewKeyDown="QuestionBox_PreviewKeyDown"
-         TextChanged="QuestionBox_TextChanged"/>
+        <Grid Grid.Row="2">
+            <TextBox x:Name="QuestionBox"
+                     MinHeight="32"
+                     MaxHeight="200"
+                     AcceptsReturn="True"
+                     VerticalScrollBarVisibility="Auto"
+                     Background="#2D2D30"
+                     Foreground="White"
+                     BorderBrush="#444"
+                     Padding="6"
+                     PreviewKeyDown="QuestionBox_PreviewKeyDown"
+                     TextChanged="QuestionBox_TextChanged"/>
+            <TextBlock Text="Ask anything"
+                       Foreground="#888"
+                       Padding="10,6,6,6"
+                       IsHitTestVisible="False"
+                       VerticalAlignment="Top"
+                       Margin="2,0,0,0"
+                       FontSize="13"
+                       Visibility="{Binding Text.IsEmpty, ElementName=QuestionBox, Converter={StaticResource BoolToVisibilityConverter}}"/>
+        </Grid>
 
         <!-- BUTTONS -->
         <StackPanel Grid.Row="3"
