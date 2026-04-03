@@ -58,14 +58,9 @@ namespace AmlaDeveloperAssistantApp
                     jiraToken = jiraSettings.GetProperty("ApiToken").GetString() ?? "";
                     
                 }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"⚠️ Config file not found: {configPath}");
-                }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading Jira config: {ex.Message}");
             }
         }
 
@@ -169,7 +164,6 @@ Response:";
                 }
                 catch (Exception ex1)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Method 1 failed: {ex1.Message}. Trying method 2...");
                 }
 
                 // Method 2: Use cmd.exe with proper quoting
@@ -190,7 +184,6 @@ Response:";
                 }
                 catch (Exception ex2)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Method 2 failed: {ex2.Message}. Trying method 3...");
                 }
 
                 // Method 3: Use explorer.exe to open the URL
@@ -208,7 +201,6 @@ Response:";
                 }
                 catch (Exception ex3)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Method 3 failed: {ex3.Message}. Trying method 4...");
                 }
 
                 // Method 4: Use control panel handler
@@ -225,7 +217,6 @@ Response:";
                 }
                 catch (Exception ex4)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Method 4 failed: {ex4.Message}");
                 }
 
                 // If all methods fail
@@ -265,14 +256,7 @@ Response:";
                     {
                         var errorContent = await response.Content.ReadAsStringAsync();
                         
-                        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                        {
-                            System.Diagnostics.Debug.WriteLine("403 Forbidden - Check if the API token is valid and has appropriate permissions");
-                        }
-                        else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                        {
-                            System.Diagnostics.Debug.WriteLine("401 Unauthorized - Check email and API token credentials");
-                        }
+                       
                         
                         return null;
                     }
@@ -440,7 +424,6 @@ Response:";
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error parsing ADF: {ex.Message}");
             }
 
             return "empty";
@@ -1045,7 +1028,6 @@ Response:";
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"IsSimpleQueryAI Error: {ex.Message}");
                 return false;
             }
         }
