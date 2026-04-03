@@ -77,14 +77,17 @@
 
         <!-- QUESTION INPUT -->
         <TextBox x:Name="QuestionBox"
-             Grid.Row="2"
-             Height="32"
-             Margin="0,4,0,6"
-             Background="#2D2D30"
-             Foreground="White"
-             BorderBrush="#444"
-             Padding="6"
-             KeyDown="QuestionBox_KeyDown"/>
+         Grid.Row="2"
+         MinHeight="32"
+         MaxHeight="200"
+         AcceptsReturn="True"
+         VerticalScrollBarVisibility="Auto"
+         Background="#2D2D30"
+         Foreground="White"
+         BorderBrush="#444"
+         Padding="6"
+         PreviewKeyDown="QuestionBox_PreviewKeyDown"
+         TextChanged="QuestionBox_TextChanged"/>
 
         <!-- BUTTONS -->
         <StackPanel Grid.Row="3"

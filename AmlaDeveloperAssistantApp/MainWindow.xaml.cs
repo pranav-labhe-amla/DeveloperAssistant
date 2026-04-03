@@ -134,9 +134,9 @@ namespace AmlaDeveloperAssistantApp
             var bubble = AddAiMessage("🔄 Initializing AI...");
             var textBlock = (System.Windows.Controls.RichTextBox)bubble.Child;
 
-            
+
             WarmUpModels(textBlock);
-           
+
         }
         private async Task WarmUpModels(System.Windows.Controls.RichTextBox? uiText = null)
         {
@@ -219,7 +219,7 @@ namespace AmlaDeveloperAssistantApp
                 UpdateUI(uiText, "\n🚀 All models warmed up!");
                 UpdateUI(uiText, "\n\nYou can now ask your questions. Feel free to explore! 😊");
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 UpdateUI(uiText, "\n⚠️ Warm-up error: " + ex.Message);
             }
@@ -270,6 +270,23 @@ namespace AmlaDeveloperAssistantApp
         {
             if (e.Key == Key.Enter)
                 OnSend(sender, e);
+        }
+
+        private void QuestionBox_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            // Submit on Enter (without Shift)
+            if (e.Key == Key.Enter)
+            {
+                // If Shift is pressed, allow new line.
+                if ((Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+                {
+                    return; // Allow Shift+Enter for new line
+                }
+
+                // Enter alone sends the message
+                OnSend(sender, e);
+                e.Handled = true;
+            }
         }
 
         private void AddUserMessage(string text)
@@ -400,7 +417,7 @@ namespace AmlaDeveloperAssistantApp
                 var aiBubble = AddAiMessage("Thinking...💭 ");
 
                 // Check for open sphere intent using AI
-                if(await IsOpenSphereIntentAI(question))
+                if (await IsOpenSphereIntentAI(question))
                 {
                     // Launch znode-sphere-tool in a new command prompt
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -440,20 +457,20 @@ namespace AmlaDeveloperAssistantApp
                 QuestionBox.Focus();
             }
         }
-        
+
         private void SetUiEnabled(bool isEnabled, string buttontext = "")
-        { 
+        {
             if (isEnabled)
-            { 
+            {
                 SendButton.Content = "Send";
                 SendButton.Width = 55; // auto
             }
             else
-            { 
+            {
                 SendButton.Content = "🛑 Stop Thinking..💭";
                 SendButton.Width = 120; // auto
             }
-            if(!string.IsNullOrEmpty(buttontext))
+            if (!string.IsNullOrEmpty(buttontext))
             {
                 SendButton.Content = buttontext;
             }
@@ -1168,7 +1185,7 @@ namespace AmlaDeveloperAssistantApp
                     }
                 }
                 var finalText = result.ToString();
-                if(string.IsNullOrWhiteSpace(finalText))
+                if (string.IsNullOrWhiteSpace(finalText))
                 {
                     finalText = "⚠️ No answer generated. Try refining your question.";
                 }
@@ -1212,5 +1229,25 @@ namespace AmlaDeveloperAssistantApp
             this.Hide();       // 👈 hide instead
         }
 
+        private void QuestionBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            var textBox = sender as System.Windows.Controls.TextBox;
+            textBox.Height = Double.NaN; // Reset to auto
+            textBox.UpdateLayout();
+
+            var formattedText = new FormattedText(
+                textBox.Text + "\n", // Add a new line to ensure space for last line
+                System.Globalization.CultureInfo.CurrentCulture,
+                System.Windows.FlowDirection.LeftToRight,
+                new Typeface(textBox.FontFamily, textBox.FontStyle, textBox.FontWeight, textBox.FontStretch),
+                textBox.FontSize,
+                Brushes.Black,
+                new NumberSubstitution(),
+                1);
+
+            double desiredHeight = formattedText.Height + textBox.Padding.Top + textBox.Padding.Bottom + 10;
+            textBox.Height = Math.Min(Math.Max(desiredHeight, textBox.MinHeight), textBox.MaxHeight);
+
+        }
     }
 }
