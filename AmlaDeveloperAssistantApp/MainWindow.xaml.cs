@@ -291,6 +291,20 @@ namespace AmlaDeveloperAssistantApp
 
         private void AddUserMessage(string text)
         {
+            // Use TextBox instead of TextBlock to allow text selection and copying
+            var textBox = new System.Windows.Controls.TextBox
+            {
+                Text = text,
+                Foreground = Brushes.White,
+                Background = Brushes.Transparent,
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 240,
+                IsReadOnly = true,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0),
+                IsEnabled = true // Allow selection even though read-only
+            };
+
             var bubble = new Border
             {
                 Background = Brushes.DodgerBlue,
@@ -298,13 +312,7 @@ namespace AmlaDeveloperAssistantApp
                 Padding = new Thickness(10),
                 Margin = new Thickness(60, 5, 5, 5),
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
-                Child = new TextBlock
-                {
-                    Text = text,
-                    Foreground = Brushes.White,
-                    TextWrapping = TextWrapping.Wrap,
-                    MaxWidth = 240
-                }
+                Child = textBox
             };
 
             ChatPanel.Children.Add(bubble);
