@@ -511,45 +511,22 @@ Response:";
                     stream = false
                 };
 
-                // Use a separate CancellationTokenSource for this operation
-                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
-                {
-                    try
-                    {
-                        var res = await http.PostAsync(
-                            "http://localhost:11434/api/generate",
-                            new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
-                            cts.Token
-                        );
+                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+                var res = await http.PostAsync(
+                    "http://localhost:11434/api/generate",
+                    new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
+                    _currentCts.Token
+                );
 
-                        if (!res.IsSuccessStatusCode)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"IsOpenSphereIntentAI - HTTP Error: {res.StatusCode}");
-                            return false;
-                        }
+                var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
 
-                        var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+                var output = json.RootElement.GetProperty("response")
+                    .GetString()?.Trim().ToUpper();
 
-                        var output = json.RootElement.GetProperty("response")
-                            .GetString()?.Trim().ToUpper();
-
-                        return output == "OPENSPHERE";
-                    }
-                    catch (OperationCanceledException ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"IsOpenSphereIntentAI - Request timeout (20s): {ex.Message}");
-                        return false;
-                    }
-                    catch (HttpRequestException ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"IsOpenSphereIntentAI - Connection error: {ex.Message}");
-                        return false;
-                    }
-                }
+                return output == "OPENSPHERE";
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"IsOpenSphereIntentAI Error: {ex.Message}");
                 return false;
             }
         }
