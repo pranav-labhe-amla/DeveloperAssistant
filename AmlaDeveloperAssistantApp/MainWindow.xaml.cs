@@ -262,12 +262,10 @@ Response:";
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"Fetching Jira ticket details for: {ticketId}");
                 
                 // Check if token is available
                 if (string.IsNullOrWhiteSpace(jiraToken))
                 {
-                    System.Diagnostics.Debug.WriteLine($"⚠️ Jira API token not configured. Set JIRA_API_TOKEN environment variable.");
                     return null;
                 }
                 
@@ -280,9 +278,6 @@ Response:";
                     var credentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{jiraEmail}:{jiraToken}"));
                     request.Headers.Add("Authorization", $"Basic {credentials}");
                     request.Headers.Add("Accept", "application/json");
-                    
-                    System.Diagnostics.Debug.WriteLine($"Making request to: {apiUrl}");
-                    System.Diagnostics.Debug.WriteLine($"Auth: Basic [REDACTED]");  // Don't log actual credentials
                     
                     var response = await http.SendAsync(request);
                     
@@ -305,7 +300,6 @@ Response:";
                     }
                     
                     var content = await response.Content.ReadAsStringAsync();
-                    System.Diagnostics.Debug.WriteLine($"✅ Successfully fetched Jira response");
                     
                     var json = JsonDocument.Parse(content);
                     var fields = json.RootElement.GetProperty("fields");
@@ -331,7 +325,6 @@ Response:";
                             if (!string.IsNullOrWhiteSpace(rcaText) && rcaText != "empty")
                             {
                                 rca = rcaText;
-                                System.Diagnostics.Debug.WriteLine($"✅ Found RCA in field: {fieldName}");
                                 break;
                             }
                         }
@@ -351,7 +344,6 @@ Response:";
                                 rca = rca.Substring(0, 500) + "...";
                             }
                             rca = Regex.Replace(rca, @"\s+", " ").Trim();
-                            System.Diagnostics.Debug.WriteLine($"✅ Found RCA in description text");
                         }
                     }
                     
@@ -359,7 +351,6 @@ Response:";
                     if (!string.IsNullOrWhiteSpace(rca) && rca != "empty" && (rca.Contains("{") || rca.Contains("[")))
                     {
                         // If it's JSON, set to empty
-                        System.Diagnostics.Debug.WriteLine($"⚠️ RCA contains JSON data, skipping");
                         rca = "";
                     }
                     
@@ -387,7 +378,6 @@ Response:";
                     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                     ";
                     
-                    System.Diagnostics.Debug.WriteLine($"✅ Successfully fetched ticket details for {ticketId}");
                     return ticketInfo;
                 }
             }
@@ -885,27 +875,20 @@ Response:";
                 AddUserMessage(question);
                 QuestionBox.Text = "";
 
-                System.Diagnostics.Debug.WriteLine($"\n=== OnSend Debug ===\nQuestion: '{question}'");
-
                 // Check for Jira ticket intent FIRST (before adding AI bubble)
                 var ticketId = ExtractJiraTicketId(question);
-                System.Diagnostics.Debug.WriteLine($"Extracted Ticket ID: {ticketId}");
                 
                 if (ticketId != null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Ticket ID found. Checking AI intent...");
                     var isJiraIntent = await IsOpenJiraIntentAI(question);
-                    System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI returned: {isJiraIntent}");
                     
                     if (isJiraIntent)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Opening Jira ticket: {ticketId}");
                         OpenJiraTicket(ticketId);
                         
                         // If token is not configured, just show browser message
                         if (string.IsNullOrWhiteSpace(jiraToken))
                         {
-                            System.Diagnostics.Debug.WriteLine($"⚠️ Jira API token not configured. Token value: '{jiraToken}'");
                             var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
                             AddAiMessage($"🔗 Opened Jira ticket in browser: {ticketId}");
                             return;
