@@ -32,6 +32,402 @@ namespace AmlaDeveloperAssistantApp
     public partial class MainWindow : Window
     {
         private string projectRoot = @"D:\10x";
+        private string jiraToken = "";
+        private string jiraBaseUrl = "https://amla.atlassian.net";
+        private string jiraEmail = "";
+
+        // Load configuration from appsettings.json
+        private void LoadJiraConfig()
+        {
+            try
+            {
+                var configPath = System.IO.Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    "Config",
+                    "appsettings.json"
+                );
+
+                if (System.IO.File.Exists(configPath))
+                {
+                    var json = System.IO.File.ReadAllText(configPath);
+                    using var doc = JsonDocument.Parse(json);
+                    
+                    var jiraSettings = doc.RootElement.GetProperty("JiraSettings");
+                    jiraBaseUrl = jiraSettings.GetProperty("BaseUrl").GetString() ?? "https://amla.atlassian.net";
+                    jiraEmail = jiraSettings.GetProperty("Email").GetString() ?? "";
+                    jiraToken = jiraSettings.GetProperty("ApiToken").GetString() ?? "";
+                    
+                }
+            }
+            catch (Exception ex)
+            {
+            }
+        }
+
+        // Extract Jira ticket ID from question
+        private string? ExtractJiraTicketId(string question)
+        {
+            // Updated regex to match ticket IDs like Z10-32933, ABC-123, PROJ-456, etc.
+            // Matches: (letters/digits)-digits
+            var match = Regex.Match(question, @"\b([A-Z0-9]+-\d+)\b", RegexOptions.IgnoreCase);
+            var ticketId = match.Success ? match.Groups[1].Value.ToUpper() : null;
+            return ticketId;
+        }
+
+        // AI-based intent detection for opening Jira tickets
+        private async Task<bool> IsOpenJiraIntentAI(string question)
+        {
+            try
+            {
+                var prompt = $@"You are a query classifier. Respond with ONLY ONE WORD: OPENJIRA or OTHER.
+
+OPENJIRA: opening/viewing/showing Jira tickets (any ticket ID like Z10-32933, ABC-123, etc.)
+OTHER: anything else
+
+Query: {question}
+
+Response:";
+
+                var req = new
+                {
+                    model = "phi3",
+                    prompt = prompt,
+                    stream = false,
+                    options = new
+                    {
+                        temperature = 0.1,  // Very low for classification
+                        top_p = 0.3,        // Reduce randomness
+                        num_predict = 10    // Only expect 1-2 words
+                    }
+                };
+
+                // Use a separate CancellationTokenSource for this operation
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
+                {
+                    try
+                    {
+                        var res = await http.PostAsync(
+                            "http://localhost:11434/api/generate",
+                            new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
+                            cts.Token
+                        );
+
+                        if (!res.IsSuccessStatusCode)
+                        {
+                            var errorContent = await res.Content.ReadAsStringAsync();
+                            return false;
+                        }
+
+                        var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+
+                        var output = json.RootElement.GetProperty("response")
+                            .GetString()?.Trim().ToUpper();
+
+                        var isJiraIntent = output == "OPENJIRA" || output == "OPENJIRA.";
+                        
+                        return isJiraIntent;
+                    }
+                    catch (OperationCanceledException ex)
+                    {
+                        return false;
+                    }
+                    catch (HttpRequestException ex)
+                    {
+                        return false;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return false;
+            }
+        }
+
+        // Open Jira ticket in browser
+        private void OpenJiraTicket(string ticketId)
+        {
+            try
+            {
+                var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
+                
+                
+                // Method 1: Direct shell execute (works on Windows with URL protocol handlers)
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = jiraUrl,
+                        UseShellExecute = true
+                    };
+                    System.Diagnostics.Process.Start(psi);
+                    return;
+                }
+                catch (Exception ex1)
+                {
+                }
+
+                // Method 2: Use cmd.exe with proper quoting
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "cmd.exe",
+                        Arguments = $"/c start \"\" \"{jiraUrl}\"",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    };
+                    var process = System.Diagnostics.Process.Start(psi);
+                    process?.WaitForExit(2000);
+                    return;
+                }
+                catch (Exception ex2)
+                {
+                }
+
+                // Method 3: Use explorer.exe to open the URL
+                try
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "explorer.exe",
+                        Arguments = jiraUrl,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+                    System.Diagnostics.Process.Start(psi);
+                    return;
+                }
+                catch (Exception ex3)
+                {
+                }
+
+                // Method 4: Use control panel handler
+                try
+                {
+                    System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo()
+                    {
+                        FileName = jiraUrl,
+                        UseShellExecute = true,
+                        CreateNoWindow = true
+                    };
+                    var proc = System.Diagnostics.Process.Start(psi);
+                    return;
+                }
+                catch (Exception ex4)
+                {
+                }
+
+                // If all methods fail
+                AddAiMessage($"⚠️ Could not open browser automatically. URL: {jiraUrl}");
+            }
+            catch (Exception ex)
+            {
+                AddAiMessage($"❌ Failed to open Jira ticket: {ex.Message}");
+            }
+        }
+
+        // Fetch Jira ticket description using Jira API
+        private async Task<string?> GetJiraTicketDescription(string ticketId)
+        {
+            try
+            {
+                
+                // Check if token is available
+                if (string.IsNullOrWhiteSpace(jiraToken))
+                {
+                    return null;
+                }
+                
+                var apiUrl = $"{jiraBaseUrl}/rest/api/3/issue/{ticketId}?fields=summary,description,status,priority,assignee,customfield_10000,customfield_10001,customfield_10002,customfield_10003,customfield_10004,customfield_10005";
+                
+                using (var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, apiUrl))
+                {
+                    // Use Basic Auth with email and API token (required for Jira Cloud)
+                    // Email and token are loaded from appsettings.json
+                    var credentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{jiraEmail}:{jiraToken}"));
+                    request.Headers.Add("Authorization", $"Basic {credentials}");
+                    request.Headers.Add("Accept", "application/json");
+                    
+                    var response = await http.SendAsync(request);
+                    
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var errorContent = await response.Content.ReadAsStringAsync();
+                        
+                       
+                        
+                        return null;
+                    }
+                    
+                    var content = await response.Content.ReadAsStringAsync();
+                    
+                    var json = JsonDocument.Parse(content);
+                    var fields = json.RootElement.GetProperty("fields");
+                    
+                    var summary = fields.GetProperty("summary").GetString() ?? "N/A";
+                    
+                    // Handle Jira Cloud's complex description format (ADF - Atlassian Document Format)
+                    string description = "empty";
+                    if (fields.TryGetProperty("description", out var descElement) && descElement.ValueKind != System.Text.Json.JsonValueKind.Null)
+                    {
+                        description = ExtractTextFromADF(descElement);
+                    }
+                    
+                    // Extract RCA from custom fields - try multiple possible field IDs
+                    string rca = "empty";
+                    string[] possibleRCAFields = { "customfield_10000", "customfield_10001", "customfield_10002", "customfield_10003", "customfield_10004", "customfield_10005" };
+                    
+                    foreach (var fieldName in possibleRCAFields)
+                    {
+                        if (fields.TryGetProperty(fieldName, out var rcaElement) && rcaElement.ValueKind != System.Text.Json.JsonValueKind.Null)
+                        {
+                            var rcaText = ExtractTextFromADF(rcaElement);
+                            if (!string.IsNullOrWhiteSpace(rcaText) && rcaText != "empty")
+                            {
+                                rca = rcaText;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // If no custom field has RCA, try to extract from description if it contains RCA section
+                    if (rca == "empty" && !string.IsNullOrWhiteSpace(description) && description != "empty")
+                    {
+                        // Check if description contains RCA section
+                        var rcaMatch = Regex.Match(description, @"(?:Root Cause|RCA|Root Cause Analysis)[:\s]*(.+?)(?:\n\n|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                        if (rcaMatch.Success)
+                        {
+                            rca = rcaMatch.Groups[1].Value.Trim();
+                            // Limit RCA length and remove newlines
+                            if (rca.Length > 500)
+                            {
+                                rca = rca.Substring(0, 500) + "...";
+                            }
+                            rca = Regex.Replace(rca, @"\s+", " ").Trim();
+                        }
+                    }
+                    
+                    // Clean RCA if it still contains JSON or structured data
+                    if (!string.IsNullOrWhiteSpace(rca) && rca != "empty" && (rca.Contains("{") || rca.Contains("[")))
+                    {
+                        // If it's JSON, set to empty
+                        rca = "";
+                    }
+                    
+                    var status = fields.TryGetProperty("status", out var statusElement) && statusElement.ValueKind != System.Text.Json.JsonValueKind.Null
+                        ? statusElement.GetProperty("name").GetString() ?? "N/A"
+                        : "N/A";
+                    var priority = fields.TryGetProperty("priority", out var priorityElement) && priorityElement.ValueKind != System.Text.Json.JsonValueKind.Null
+                        ? priorityElement.GetProperty("name").GetString() ?? "N/A"
+                        : "N/A";
+                    var assignee = fields.TryGetProperty("assignee", out var assigneeElement) && assigneeElement.ValueKind != System.Text.Json.JsonValueKind.Null
+                        ? assigneeElement.GetProperty("displayName").GetString() ?? "Unassigned"
+                        : "Unassigned";
+                    
+                    var jiraTicketUrl = $"{jiraBaseUrl}/browse/{ticketId}";
+                    var ticketInfo = $@"
+                    📋 **Jira Ticket: {ticketId}**
+                    🔗 {jiraTicketUrl}
+                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    **Summary:** {summary}
+                    **Status:** {status}
+                    **Priority:** {priority}
+                    **Assignee:** {assignee}
+                    **Description:**{description}
+                    **Root Cause Analysis (RCA):**{rca}
+                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                    ";
+                    
+                    return ticketInfo;
+                }
+            }
+            catch (Exception ex)
+            {
+                return null;
+            }
+        }
+
+        // Helper method to extract text from ADF format
+        private string ExtractTextFromADF(JsonElement element)
+        {
+            try
+            {
+                var textParts = new List<string>();
+
+                // Handle different JSON structures
+                if (element.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    // Simple string value
+                    var plainText = element.GetString();
+                    if (!string.IsNullOrWhiteSpace(plainText))
+                    {
+                        return plainText;
+                    }
+                }
+                else if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    // Try to extract from ADF object format
+                    if (element.TryGetProperty("content", out var contentArray) && 
+                        contentArray.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        // First level: iterate through array
+                        foreach (var item in contentArray.EnumerateArray())
+                        {
+                            // Try to get text directly
+                            if (item.TryGetProperty("text", out var directText))
+                            {
+                                var text = directText.GetString();
+                                if (!string.IsNullOrWhiteSpace(text))
+                                    textParts.Add(text);
+                            }
+
+                            // Try nested content structure
+                            if (item.TryGetProperty("content", out var nestedContent) && 
+                                nestedContent.ValueKind == System.Text.Json.JsonValueKind.Array)
+                            {
+                                foreach (var nestedItem in nestedContent.EnumerateArray())
+                                {
+                                    if (nestedItem.TryGetProperty("text", out var nestedText))
+                                    {
+                                        var text = nestedText.GetString();
+                                        if (!string.IsNullOrWhiteSpace(text))
+                                            textParts.Add(text);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    // Try direct "text" property
+                    else if (element.TryGetProperty("text", out var directTextProp))
+                    {
+                        var text = directTextProp.GetString();
+                        if (!string.IsNullOrWhiteSpace(text))
+                            return text;
+                    }
+                    // Last resort: stringify the whole object
+                    else
+                    {
+                        var rawJson = element.GetRawText();
+                        if (!string.IsNullOrWhiteSpace(rawJson) && rawJson.Length < 1000)
+                        {
+                            return rawJson;
+                        }
+                    }
+                }
+
+                if (textParts.Count > 0)
+                {
+                    return string.Join(" ", textParts);
+                }
+            }
+            catch (Exception ex)
+            {
+            }
+
+            return "empty";
+        }
 
         // AI-based intent detection for opening znode sphere
         private async Task<bool> IsOpenSphereIntentAI(string question)
@@ -107,6 +503,9 @@ namespace AmlaDeveloperAssistantApp
         public MainWindow()
         {
             InitializeComponent();
+
+            // Load Jira configuration
+            LoadJiraConfig();
 
             selectedpath.Text = projectRoot;
 
@@ -435,7 +834,45 @@ namespace AmlaDeveloperAssistantApp
             {
                 AddUserMessage(question);
                 QuestionBox.Text = "";
-                var aiBubble = AddAiMessage("Thinking...💭 ");
+
+                try
+                {
+                    // Check for Jira ticket intent FIRST (before adding AI bubble)
+                    var ticketId = ExtractJiraTicketId(question);
+
+                    if (ticketId != null)
+                    {
+                        var isJiraIntent = await IsOpenJiraIntentAI(question);
+
+                        if (isJiraIntent)
+                        {
+                            OpenJiraTicket(ticketId);
+
+                            // If token is not configured, just show browser message
+                            if (string.IsNullOrWhiteSpace(jiraToken))
+                            {
+                                var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
+                                AddAiMessage($"🔗 Opened Jira ticket in browser: {ticketId}");
+                                return;
+                            }
+
+                            // Fetch and display ticket description
+                            var ticketDescription = await GetJiraTicketDescription(ticketId);
+                            if (ticketDescription != null)
+                            {
+                                AddAiMessage(ticketDescription);
+                            }
+                            else
+                            {
+                                AddAiMessage($"🔗 Opened Jira ticket: {ticketId}");
+                            }
+                            return;
+                        }
+                    }
+                }catch (Exception ex)
+                {
+                    AddAiMessage("⚠️ Jira intent detection error: " + ex.Message);
+                }
 
                 // Check for open sphere intent using AI
                 if (await IsOpenSphereIntentAI(question))
@@ -447,11 +884,12 @@ namespace AmlaDeveloperAssistantApp
                         Arguments = "/k znode-sphere-tool",
                         UseShellExecute = true
                     });
-                    AddUserMessage(question);
                     AddAiMessage("🌌 Launched znode-sphere-tool in a new command prompt.");
-                    QuestionBox.Text = "";
                     return;
                 }
+
+                // Only add the thinking bubble if we're proceeding with normal AI processing
+                var aiBubble = AddAiMessage("Thinking...💭 ");
                 bool isSimple = IsSimpleQuery(question);
                 // fallback to AI if uncertain
                 if (!isSimple && question.Length < 25)
@@ -599,7 +1037,7 @@ namespace AmlaDeveloperAssistantApp
 
                 return output == "GREETING";
             }
-            catch
+            catch (Exception ex)
             {
                 return false;
             }
