@@ -834,37 +834,43 @@ Response:";
                 AddUserMessage(question);
                 QuestionBox.Text = "";
 
-                // Check for Jira ticket intent FIRST (before adding AI bubble)
-                var ticketId = ExtractJiraTicketId(question);
-                
-                if (ticketId != null)
+                try
                 {
-                    var isJiraIntent = await IsOpenJiraIntentAI(question);
-                    
-                    if (isJiraIntent)
+                    // Check for Jira ticket intent FIRST (before adding AI bubble)
+                    var ticketId = ExtractJiraTicketId(question);
+
+                    if (ticketId != null)
                     {
-                        OpenJiraTicket(ticketId);
-                        
-                        // If token is not configured, just show browser message
-                        if (string.IsNullOrWhiteSpace(jiraToken))
+                        var isJiraIntent = await IsOpenJiraIntentAI(question);
+
+                        if (isJiraIntent)
                         {
-                            var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
-                            AddAiMessage($"🔗 Opened Jira ticket in browser: {ticketId}");
+                            OpenJiraTicket(ticketId);
+
+                            // If token is not configured, just show browser message
+                            if (string.IsNullOrWhiteSpace(jiraToken))
+                            {
+                                var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
+                                AddAiMessage($"🔗 Opened Jira ticket in browser: {ticketId}");
+                                return;
+                            }
+
+                            // Fetch and display ticket description
+                            var ticketDescription = await GetJiraTicketDescription(ticketId);
+                            if (ticketDescription != null)
+                            {
+                                AddAiMessage(ticketDescription);
+                            }
+                            else
+                            {
+                                AddAiMessage($"🔗 Opened Jira ticket: {ticketId}");
+                            }
                             return;
                         }
-                        
-                        // Fetch and display ticket description
-                        var ticketDescription = await GetJiraTicketDescription(ticketId);
-                        if (ticketDescription != null)
-                        {
-                            AddAiMessage(ticketDescription);
-                        }
-                        else
-                        {
-                            AddAiMessage($"🔗 Opened Jira ticket: {ticketId}");
-                        }
-                        return;
                     }
+                }catch (Exception ex)
+                {
+                    AddAiMessage("⚠️ Jira intent detection error: " + ex.Message);
                 }
 
                 // Check for open sphere intent using AI
