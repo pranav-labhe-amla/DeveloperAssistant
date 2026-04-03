@@ -93,6 +93,7 @@ namespace AmlaDeveloperAssistantApp
         };
         private CancellationTokenSource? _currentCts;
         private bool _isProcessing = false;
+        private bool _isResponseGenerating = false;
         private List<ChatMessage> _chatHistory = new();
 
         private readonly string chatHistoryPath = Path.Combine(
@@ -367,6 +368,17 @@ namespace AmlaDeveloperAssistantApp
                 try
                 {
                     _currentCts?.Cancel();
+                }
+                catch { }
+
+                return;
+            }
+
+            if (_isResponseGenerating)
+            {
+                try
+                {
+                    _isResponseGenerating = false;
                 }
                 catch { }
 
@@ -993,6 +1005,7 @@ namespace AmlaDeveloperAssistantApp
         // CALL OLLAMA
         private async Task<string> CallOllamaStreaming(string question, string context, bool isSimple, System.Windows.Controls.RichTextBox? uiText = null)
         {
+            _isResponseGenerating = true;
             string prompt;
             string modelToUse = "phi3"; // ✅ fixed
 
@@ -1133,12 +1146,19 @@ namespace AmlaDeveloperAssistantApp
                             // 🔥 Throttle UI updates (VERY IMPORTANT)
                             if (uiText != null && counter % 2 == 0)
                             {
-                                var textSnapshot = result.ToString();
-
-                                await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                                if (_isResponseGenerating)
                                 {
-                                    SetUIMessage(uiText, textSnapshot);
-                                }, System.Windows.Threading.DispatcherPriority.Background);
+                                    var textSnapshot = result.ToString();
+
+                                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                                    {
+                                        SetUIMessage(uiText, textSnapshot);
+                                    }, System.Windows.Threading.DispatcherPriority.Background);
+                                }
+                                else
+                                {
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1178,6 +1198,10 @@ namespace AmlaDeveloperAssistantApp
                         SetUIMessage(uiText, "⚠️ Request timed out. Try again or refine your question.");
                     });
                 }
+            }
+            finally
+            {
+                _isResponseGenerating = false;
             }
             return string.Empty;
         }
