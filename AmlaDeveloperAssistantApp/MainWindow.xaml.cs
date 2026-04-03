@@ -86,6 +86,7 @@ namespace AmlaDeveloperAssistantApp
 
         private readonly string repoVectorPath;
         private readonly string kbVectorPath;
+        private readonly string iconPath;
 
         private readonly HttpClient http = new HttpClient()
         {
@@ -119,6 +120,17 @@ namespace AmlaDeveloperAssistantApp
                 "AmlaDeveloperAssistant",
                 "kb_vectors.json"
             );
+
+            iconPath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "app.ico"
+            );
+
+            // Set window icon if it exists
+            if (File.Exists(iconPath))
+            {
+                this.Icon = new System.Windows.Media.Imaging.BitmapImage(new Uri(iconPath));
+            }
 
             if (File.Exists(chatHistoryPath))
             {

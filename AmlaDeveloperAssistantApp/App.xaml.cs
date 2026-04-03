@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Windows;
 using System.Drawing;
 using System.Windows.Forms;
@@ -29,6 +30,13 @@ namespace AmlaDeveloperAssistantApp
 
             trayIcon = new NotifyIcon();
             trayIcon.Icon = new Icon("app.ico");
+
+            // Load icon from project directory
+            string iconPath = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "app.ico"
+            );
+                       
             trayIcon.Visible = true;
             trayIcon.Text = "Amla Developer Assistant";
 
