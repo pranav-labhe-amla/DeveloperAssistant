@@ -44,7 +44,7 @@ namespace AmlaDeveloperAssistantApp
         // Jira configuration constants
         private const string JiraBaseUrl = "https://amla.atlassian.net";
         private const string JiraUsername = "ashish.patle@amla.io";
-        private const string JiraAuthToken = "ATATT3xFfGF0E1JzdmvVk0DqNSBR-IkuD5SEuCr68nCCw_Ol9kG59GE5z1iiSq-JduklLnZ0NEY4XPvQodByHn207-CKVYmiBe_OzSEcq_r4LM1gKX0xlx3WUo6e6sSK8sTYw209jHMQ98dvYNOl5lvM35qpTPLPBG-ZOvUSGEbtUJtr8RwClzk=F9AE9E3E";
+        private const string JiraAuthToken = "ATATT3xFfGF0KXDqIG-tm-lxAIer4DuExbAD6CuoGWRVbfv23_hKzXtPfBdG07XQhjB7oe56oH1ZIxU_d-GGyU5UIFSpHhptdgervDEkcYRU0ngBXPUMmtuZ0fjpLweup8Za4OKkzhKuy2_2WXodFbdYgqFNsQeQ4Kp3kJx6oY1XWLrj-gRpJFY=12982C56";
 
         // Load configuration from appsettings.json
         private void LoadJiraConfig()

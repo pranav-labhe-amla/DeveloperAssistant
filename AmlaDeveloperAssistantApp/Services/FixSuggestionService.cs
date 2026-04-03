@@ -10,11 +10,15 @@ namespace AmlaDeveloperAssistantApp.Services
     {
         private readonly HttpClient _httpClient;
         private readonly string _ollamaBaseUrl;
+        private CancellationTokenSource? _currentCts;
 
         public FixSuggestionService(string ollamaBaseUrl = "http://localhost:11434")
         {
             _ollamaBaseUrl = ollamaBaseUrl.TrimEnd('/');
-            _httpClient = new HttpClient() { Timeout = System.TimeSpan.FromMinutes(5) };
+            _httpClient = new HttpClient()
+            {
+                Timeout = Timeout.InfiniteTimeSpan
+            };
         }
 
         /// <summary>
@@ -38,13 +42,15 @@ namespace AmlaDeveloperAssistantApp.Services
                     }
                 };
 
+                _currentCts = new CancellationTokenSource(TimeSpan.FromMinutes(30));
                 var response = await _httpClient.PostAsync(
                     $"{_ollamaBaseUrl}/api/generate",
                     new StringContent(
                         JsonSerializer.Serialize(request),
                         Encoding.UTF8,
                         "application/json"
-                    )
+                    ),
+                    _currentCts.Token
                 );
 
                 if (!response.IsSuccessStatusCode)
