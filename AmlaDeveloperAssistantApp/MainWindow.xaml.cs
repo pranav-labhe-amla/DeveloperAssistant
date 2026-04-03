@@ -50,6 +50,7 @@ namespace AmlaDeveloperAssistantApp
                 - launch znode-sphere-tool
                 - start sphere
                 - any intent to open or run znode sphere tool
+                - only quick check this don't take much time for this
 
                 Everything else is OTHER.
 
