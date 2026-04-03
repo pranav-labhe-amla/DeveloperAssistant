@@ -57,10 +57,6 @@ namespace AmlaDeveloperAssistantApp
                     jiraEmail = jiraSettings.GetProperty("Email").GetString() ?? "";
                     jiraToken = jiraSettings.GetProperty("ApiToken").GetString() ?? "";
                     
-                    System.Diagnostics.Debug.WriteLine($"✅ Loaded Jira config from: {configPath}");
-                    System.Diagnostics.Debug.WriteLine($"Jira Base URL: {jiraBaseUrl}");
-                    System.Diagnostics.Debug.WriteLine($"Jira Email: {jiraEmail}");
-                    System.Diagnostics.Debug.WriteLine($"Jira Token: {(string.IsNullOrWhiteSpace(jiraToken) ? "NOT SET" : "[CONFIGURED]")}");
                 }
                 else
                 {
@@ -80,7 +76,6 @@ namespace AmlaDeveloperAssistantApp
             // Matches: (letters/digits)-digits
             var match = Regex.Match(question, @"\b([A-Z0-9]+-\d+)\b", RegexOptions.IgnoreCase);
             var ticketId = match.Success ? match.Groups[1].Value.ToUpper() : null;
-            System.Diagnostics.Debug.WriteLine($"ExtractJiraTicketId - Input: '{question}' | Found: '{ticketId}'");
             return ticketId;
         }
 
@@ -125,8 +120,6 @@ Response:";
                         if (!res.IsSuccessStatusCode)
                         {
                             var errorContent = await res.Content.ReadAsStringAsync();
-                            System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI - HTTP Error: {res.StatusCode}");
-                            System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI - Response: {errorContent}");
                             return false;
                         }
 
@@ -136,28 +129,21 @@ Response:";
                             .GetString()?.Trim().ToUpper();
 
                         var isJiraIntent = output == "OPENJIRA" || output == "OPENJIRA.";
-                        System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI - Question: '{question}' | Response: '{output}' | Result: {isJiraIntent}");
                         
                         return isJiraIntent;
                     }
                     catch (OperationCanceledException ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI - Request timeout (20s): {ex.Message}");
-                        System.Diagnostics.Debug.WriteLine($"⚠️ Ollama service may be slow or unresponsive at http://localhost:11434");
                         return false;
                     }
                     catch (HttpRequestException ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI - Connection error: {ex.Message}");
-                        System.Diagnostics.Debug.WriteLine($"⚠️ Cannot connect to Ollama at http://localhost:11434 - Is it running?");
                         return false;
                     }
                 }
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI Error: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI Stack: {ex.StackTrace}");
                 return false;
             }
         }
@@ -169,7 +155,6 @@ Response:";
             {
                 var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
                 
-                System.Diagnostics.Debug.WriteLine($"Opening Jira URL: {jiraUrl}");
                 
                 // Method 1: Direct shell execute (works on Windows with URL protocol handlers)
                 try
@@ -180,7 +165,6 @@ Response:";
                         UseShellExecute = true
                     };
                     System.Diagnostics.Process.Start(psi);
-                    System.Diagnostics.Debug.WriteLine($"✅ Browser opened successfully via method 1");
                     return;
                 }
                 catch (Exception ex1)
@@ -202,7 +186,6 @@ Response:";
                     };
                     var process = System.Diagnostics.Process.Start(psi);
                     process?.WaitForExit(2000);
-                    System.Diagnostics.Debug.WriteLine($"✅ Browser opened successfully via method 2 (cmd)");
                     return;
                 }
                 catch (Exception ex2)
@@ -221,7 +204,6 @@ Response:";
                         CreateNoWindow = true
                     };
                     System.Diagnostics.Process.Start(psi);
-                    System.Diagnostics.Debug.WriteLine($"✅ Browser opened successfully via method 3 (explorer)");
                     return;
                 }
                 catch (Exception ex3)
@@ -239,7 +221,6 @@ Response:";
                         CreateNoWindow = true
                     };
                     var proc = System.Diagnostics.Process.Start(psi);
-                    System.Diagnostics.Debug.WriteLine($"✅ Browser opened successfully via method 4");
                     return;
                 }
                 catch (Exception ex4)
@@ -253,7 +234,6 @@ Response:";
             catch (Exception ex)
             {
                 AddAiMessage($"❌ Failed to open Jira ticket: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"Error opening Jira: {ex}");
             }
         }
 
@@ -284,8 +264,6 @@ Response:";
                     if (!response.IsSuccessStatusCode)
                     {
                         var errorContent = await response.Content.ReadAsStringAsync();
-                        System.Diagnostics.Debug.WriteLine($"Jira API error: {response.StatusCode}");
-                        System.Diagnostics.Debug.WriteLine($"Response: {errorContent}");
                         
                         if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                         {
@@ -383,8 +361,6 @@ Response:";
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Error fetching Jira ticket: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
                 return null;
             }
         }
