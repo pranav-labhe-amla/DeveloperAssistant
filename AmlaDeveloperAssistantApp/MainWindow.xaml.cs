@@ -860,6 +860,9 @@ Response:";
 
                 QuestionBox.Text = "";
 
+                // Only add the thinking bubble if we're proceeding with normal AI processing
+                var aiBubble = AddAiMessage("Thinking...💭 ");
+
                 try
                 {
                     // Check for Jira ticket intent FIRST (before adding AI bubble)
@@ -914,8 +917,6 @@ Response:";
                     return;
                 }
 
-                // Only add the thinking bubble if we're proceeding with normal AI processing
-                var aiBubble = AddAiMessage("Thinking...💭 ");
                 bool isSimple = IsSimpleQuery(question);
                 // fallback to AI if uncertain
                 if (!isSimple && question.Length < 25)
