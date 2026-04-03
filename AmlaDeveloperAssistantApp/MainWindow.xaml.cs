@@ -820,107 +820,39 @@ Response:";
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden
             };
 
-            var document = new FlowDocument
+            var paragraph = new Paragraph();
+            var urlRegex = new Regex(@"(https?://[\w\-._~:/?#[\]@!$&'()*+,;=%]+)");
+            int lastIndex = 0;
+            foreach (Match match in urlRegex.Matches(text))
+            {
+                // Add text before the link
+                if (match.Index > lastIndex)
+                {
+                    paragraph.Inlines.Add(new Run(text.Substring(lastIndex, match.Index - lastIndex)));
+                }
+                // Add the hyperlink
+                var link = new Hyperlink(new Run(match.Value))
+                {
+                    NavigateUri = new Uri(match.Value)
+                };
+                link.RequestNavigate += (s, e) =>
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+                };
+                paragraph.Inlines.Add(link);
+                lastIndex = match.Index + match.Length;
+            }
+            // Add any remaining text
+            if (lastIndex < text.Length)
+            {
+                paragraph.Inlines.Add(new Run(text.Substring(lastIndex)));
+            }
+
+            richTextBox.Document = new FlowDocument(paragraph)
             {
                 PagePadding = new Thickness(0),
                 Background = Brushes.Transparent
             };
-
-            // Parse lines and handle markdown formatting
-            var lines = text.Split(new[] { "\n", Environment.NewLine }, StringSplitOptions.None);
-            
-            foreach (var line in lines)
-            {
-                var paragraph = new Paragraph();
-                var trimmedLine = line.Trim();
-
-                if (string.IsNullOrWhiteSpace(trimmedLine))
-                {
-                    document.Blocks.Add(paragraph);
-                    continue;
-                }
-
-                // Check for bold text pattern: **text**
-                var boldPattern = new Regex(@"\*\*([^*]+)\*\*");
-                var urlRegex = new Regex(@"(https?://[\w\-._~:/?#[\]@!$&'()*+,;=%]+)");
-                
-                int lastIndex = 0;
-                var matches = new List<(int Index, int Length, string Text, bool IsBold, bool IsUrl)>();
-
-                // Collect all matches
-                foreach (Match match in boldPattern.Matches(trimmedLine))
-                {
-                    matches.Add((match.Index, match.Length, match.Groups[1].Value, true, false));
-                }
-
-                foreach (Match match in urlRegex.Matches(trimmedLine))
-                {
-                    // Check if this URL is not already inside a bold match
-                    bool isInsideBold = matches.Any(m => m.IsBold && match.Index >= m.Index && match.Index + match.Length <= m.Index + m.Length);
-                    if (!isInsideBold)
-                    {
-                        matches.Add((match.Index, match.Length, match.Value, false, true));
-                    }
-                }
-
-                // Sort matches by index
-                matches = matches.OrderBy(m => m.Index).ToList();
-
-                lastIndex = 0;
-                foreach (var match in matches)
-                {
-                    // Add text before the match
-                    if (match.Index > lastIndex)
-                    {
-                        var beforeText = trimmedLine.Substring(lastIndex, match.Index - lastIndex);
-                        paragraph.Inlines.Add(new Run(beforeText));
-                    }
-
-                    if (match.IsUrl)
-                    {
-                        // Add hyperlink
-                        var link = new Hyperlink(new Run(match.Text))
-                        {
-                            NavigateUri = new Uri(match.Text),
-                            Foreground = Brushes.Cyan
-                        };
-                        link.RequestNavigate += (s, e) =>
-                        {
-                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
-                        };
-                        paragraph.Inlines.Add(link);
-                    }
-                    else if (match.IsBold)
-                    {
-                        // Add bold text
-                        var boldRun = new Run(match.Text)
-                        {
-                            FontWeight = System.Windows.FontWeights.Bold,
-                            Foreground = Brushes.Yellow
-                        };
-                        paragraph.Inlines.Add(boldRun);
-                    }
-
-                    lastIndex = match.Index + match.Length;
-                }
-
-                // Add remaining text
-                if (lastIndex < trimmedLine.Length)
-                {
-                    var remainingText = trimmedLine.Substring(lastIndex);
-                    // Remove any leftover ** markers
-                    remainingText = remainingText.Replace("**", "");
-                    if (!string.IsNullOrEmpty(remainingText))
-                    {
-                        paragraph.Inlines.Add(new Run(remainingText));
-                    }
-                }
-
-                paragraph.Margin = new Thickness(0);
-                document.Blocks.Add(paragraph);
-            }
-
-            richTextBox.Document = document;
 
             var bubble = new Border
             {
@@ -1137,63 +1069,43 @@ Response:";
         {
             try
             {
-                var prompt = $@"Classify the query. Respond with ONLY ONE WORD: GREETING or OTHER.
+                var prompt = $@"
+                Classify the user query.
 
-GREETING: hi, hello, hey, thanks, casual conversation
-OTHER: technical questions, requests, anything else
+                Return ONLY one word:
+                GREETING or OTHER
 
-Query: {question}
+                GREETING includes:
+                - hi, hello, hey
+                - thanks, thank you
+                - casual talk
 
-Response:";
+                Everything else is OTHER.
+
+                Query:
+                {question}
+                ";
 
                 var req = new
                 {
                     model = "phi3",
                     prompt = prompt,
-                    stream = false,
-                    options = new
-                    {
-                        temperature = 0.1,  // Very low for classification
-                        top_p = 0.3,        // Reduce randomness
-                        num_predict = 10    // Only expect 1-2 words
-                    }
+                    stream = false
                 };
 
-                // Use a separate CancellationTokenSource for this operation
-                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
-                {
-                    try
-                    {
-                        var res = await http.PostAsync(
-                            "http://localhost:11434/api/generate",
-                            new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
-                            cts.Token
-                        );
+                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var res = await http.PostAsync(
+                    "http://localhost:11434/api/generate",
+                    new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
+                    _currentCts.Token
+                );
 
-                        if (!res.IsSuccessStatusCode)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"IsSimpleQueryAI - HTTP Error: {res.StatusCode}");
-                            return false;
-                        }
+                var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
 
-                        var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+                var output = json.RootElement.GetProperty("response")
+                    .GetString()?.Trim().ToUpper();
 
-                        var output = json.RootElement.GetProperty("response")
-                            .GetString()?.Trim().ToUpper();
-
-                        return output == "GREETING";
-                    }
-                    catch (OperationCanceledException ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"IsSimpleQueryAI - Request timeout (15s): {ex.Message}");
-                        return false;
-                    }
-                    catch (HttpRequestException ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"IsSimpleQueryAI - Connection error: {ex.Message}");
-                        return false;
-                    }
-                }
+                return output == "GREETING";
             }
             catch (Exception ex)
             {
