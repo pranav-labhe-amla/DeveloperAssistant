@@ -32,453 +32,6 @@ namespace AmlaDeveloperAssistantApp
     public partial class MainWindow : Window
     {
         private string projectRoot = @"D:\10x";
-        private string jiraToken = "";
-        private string jiraBaseUrl = "https://amla.atlassian.net";
-        private string jiraEmail = "";
-
-        // Load configuration from appsettings.json
-        private void LoadJiraConfig()
-        {
-            try
-            {
-                var configPath = System.IO.Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory,
-                    "Config",
-                    "appsettings.json"
-                );
-
-                if (System.IO.File.Exists(configPath))
-                {
-                    var json = System.IO.File.ReadAllText(configPath);
-                    using var doc = JsonDocument.Parse(json);
-                    
-                    var jiraSettings = doc.RootElement.GetProperty("JiraSettings");
-                    jiraBaseUrl = jiraSettings.GetProperty("BaseUrl").GetString() ?? "https://amla.atlassian.net";
-                    jiraEmail = jiraSettings.GetProperty("Email").GetString() ?? "";
-                    jiraToken = jiraSettings.GetProperty("ApiToken").GetString() ?? "";
-                    
-                    System.Diagnostics.Debug.WriteLine($"✅ Loaded Jira config from: {configPath}");
-                    System.Diagnostics.Debug.WriteLine($"Jira Base URL: {jiraBaseUrl}");
-                    System.Diagnostics.Debug.WriteLine($"Jira Email: {jiraEmail}");
-                    System.Diagnostics.Debug.WriteLine($"Jira Token: {(string.IsNullOrWhiteSpace(jiraToken) ? "NOT SET" : "[CONFIGURED]")}");
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"⚠️ Config file not found: {configPath}");
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"❌ Error loading Jira config: {ex.Message}");
-            }
-        }
-
-        // Extract Jira ticket ID from question
-        private string? ExtractJiraTicketId(string question)
-        {
-            // Updated regex to match ticket IDs like Z10-32933, ABC-123, PROJ-456, etc.
-            // Matches: (letters/digits)-digits
-            var match = Regex.Match(question, @"\b([A-Z0-9]+-\d+)\b", RegexOptions.IgnoreCase);
-            var ticketId = match.Success ? match.Groups[1].Value.ToUpper() : null;
-            System.Diagnostics.Debug.WriteLine($"ExtractJiraTicketId - Input: '{question}' | Found: '{ticketId}'");
-            return ticketId;
-        }
-
-        // AI-based intent detection for opening Jira tickets
-        private async Task<bool> IsOpenJiraIntentAI(string question)
-        {
-            try
-            {
-                var prompt = $@"You are a query classifier. Respond with ONLY ONE WORD: OPENJIRA or OTHER.
-
-OPENJIRA: opening/viewing/showing Jira tickets (any ticket ID like Z10-32933, ABC-123, etc.)
-OTHER: anything else
-
-Query: {question}
-
-Response:";
-
-                var req = new
-                {
-                    model = "phi3",
-                    prompt = prompt,
-                    stream = false,
-                    options = new
-                    {
-                        temperature = 0.1,  // Very low for classification
-                        top_p = 0.3,        // Reduce randomness
-                        num_predict = 10    // Only expect 1-2 words
-                    }
-                };
-
-                // Use a separate CancellationTokenSource for this operation
-                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
-                {
-                    try
-                    {
-                        var res = await http.PostAsync(
-                            "http://localhost:11434/api/generate",
-                            new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
-                            cts.Token
-                        );
-
-                        if (!res.IsSuccessStatusCode)
-                        {
-                            var errorContent = await res.Content.ReadAsStringAsync();
-                            System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI - HTTP Error: {res.StatusCode}");
-                            System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI - Response: {errorContent}");
-                            return false;
-                        }
-
-                        var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
-
-                        var output = json.RootElement.GetProperty("response")
-                            .GetString()?.Trim().ToUpper();
-
-                        var isJiraIntent = output == "OPENJIRA" || output == "OPENJIRA.";
-                        System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI - Question: '{question}' | Response: '{output}' | Result: {isJiraIntent}");
-                        
-                        return isJiraIntent;
-                    }
-                    catch (OperationCanceledException ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI - Request timeout (20s): {ex.Message}");
-                        System.Diagnostics.Debug.WriteLine($"⚠️ Ollama service may be slow or unresponsive at http://localhost:11434");
-                        return false;
-                    }
-                    catch (HttpRequestException ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI - Connection error: {ex.Message}");
-                        System.Diagnostics.Debug.WriteLine($"⚠️ Cannot connect to Ollama at http://localhost:11434 - Is it running?");
-                        return false;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI Error: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI Stack: {ex.StackTrace}");
-                return false;
-            }
-        }
-
-        // Open Jira ticket in browser
-        private void OpenJiraTicket(string ticketId)
-        {
-            try
-            {
-                var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
-                
-                System.Diagnostics.Debug.WriteLine($"Opening Jira URL: {jiraUrl}");
-                
-                // Method 1: Direct shell execute (works on Windows with URL protocol handlers)
-                try
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = jiraUrl,
-                        UseShellExecute = true
-                    };
-                    System.Diagnostics.Process.Start(psi);
-                    System.Diagnostics.Debug.WriteLine($"✅ Browser opened successfully via method 1");
-                    return;
-                }
-                catch (Exception ex1)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Method 1 failed: {ex1.Message}. Trying method 2...");
-                }
-
-                // Method 2: Use cmd.exe with proper quoting
-                try
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "cmd.exe",
-                        Arguments = $"/c start \"\" \"{jiraUrl}\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    };
-                    var process = System.Diagnostics.Process.Start(psi);
-                    process?.WaitForExit(2000);
-                    System.Diagnostics.Debug.WriteLine($"✅ Browser opened successfully via method 2 (cmd)");
-                    return;
-                }
-                catch (Exception ex2)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Method 2 failed: {ex2.Message}. Trying method 3...");
-                }
-
-                // Method 3: Use explorer.exe to open the URL
-                try
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = jiraUrl,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-                    System.Diagnostics.Process.Start(psi);
-                    System.Diagnostics.Debug.WriteLine($"✅ Browser opened successfully via method 3 (explorer)");
-                    return;
-                }
-                catch (Exception ex3)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Method 3 failed: {ex3.Message}. Trying method 4...");
-                }
-
-                // Method 4: Use control panel handler
-                try
-                {
-                    System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo()
-                    {
-                        FileName = jiraUrl,
-                        UseShellExecute = true,
-                        CreateNoWindow = true
-                    };
-                    var proc = System.Diagnostics.Process.Start(psi);
-                    System.Diagnostics.Debug.WriteLine($"✅ Browser opened successfully via method 4");
-                    return;
-                }
-                catch (Exception ex4)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Method 4 failed: {ex4.Message}");
-                }
-
-                // If all methods fail
-                AddAiMessage($"⚠️ Could not open browser automatically. URL: {jiraUrl}");
-            }
-            catch (Exception ex)
-            {
-                AddAiMessage($"❌ Failed to open Jira ticket: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"Error opening Jira: {ex}");
-            }
-        }
-
-        // Fetch Jira ticket description using Jira API
-        private async Task<string?> GetJiraTicketDescription(string ticketId)
-        {
-            try
-            {
-                System.Diagnostics.Debug.WriteLine($"Fetching Jira ticket details for: {ticketId}");
-                
-                // Check if token is available
-                if (string.IsNullOrWhiteSpace(jiraToken))
-                {
-                    System.Diagnostics.Debug.WriteLine($"⚠️ Jira API token not configured. Set JIRA_API_TOKEN environment variable.");
-                    return null;
-                }
-                
-                var apiUrl = $"{jiraBaseUrl}/rest/api/3/issue/{ticketId}?fields=summary,description,status,priority,assignee,customfield_10000,customfield_10001,customfield_10002,customfield_10003,customfield_10004,customfield_10005";
-                
-                using (var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, apiUrl))
-                {
-                    // Use Basic Auth with email and API token (required for Jira Cloud)
-                    // Email and token are loaded from appsettings.json
-                    var credentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{jiraEmail}:{jiraToken}"));
-                    request.Headers.Add("Authorization", $"Basic {credentials}");
-                    request.Headers.Add("Accept", "application/json");
-                    
-                    System.Diagnostics.Debug.WriteLine($"Making request to: {apiUrl}");
-                    System.Diagnostics.Debug.WriteLine($"Auth: Basic [REDACTED]");  // Don't log actual credentials
-                    
-                    var response = await http.SendAsync(request);
-                    
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        var errorContent = await response.Content.ReadAsStringAsync();
-                        System.Diagnostics.Debug.WriteLine($"Jira API error: {response.StatusCode}");
-                        System.Diagnostics.Debug.WriteLine($"Response: {errorContent}");
-                        
-                        if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                        {
-                            System.Diagnostics.Debug.WriteLine("403 Forbidden - Check if the API token is valid and has appropriate permissions");
-                        }
-                        else if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
-                        {
-                            System.Diagnostics.Debug.WriteLine("401 Unauthorized - Check email and API token credentials");
-                        }
-                        
-                        return null;
-                    }
-                    
-                    var content = await response.Content.ReadAsStringAsync();
-                    System.Diagnostics.Debug.WriteLine($"✅ Successfully fetched Jira response");
-                    
-                    var json = JsonDocument.Parse(content);
-                    var fields = json.RootElement.GetProperty("fields");
-                    
-                    var summary = fields.GetProperty("summary").GetString() ?? "N/A";
-                    
-                    // Handle Jira Cloud's complex description format (ADF - Atlassian Document Format)
-                    string description = "empty";
-                    if (fields.TryGetProperty("description", out var descElement) && descElement.ValueKind != System.Text.Json.JsonValueKind.Null)
-                    {
-                        description = ExtractTextFromADF(descElement);
-                    }
-                    
-                    // Extract RCA from custom fields - try multiple possible field IDs
-                    string rca = "empty";
-                    string[] possibleRCAFields = { "customfield_10000", "customfield_10001", "customfield_10002", "customfield_10003", "customfield_10004", "customfield_10005" };
-                    
-                    foreach (var fieldName in possibleRCAFields)
-                    {
-                        if (fields.TryGetProperty(fieldName, out var rcaElement) && rcaElement.ValueKind != System.Text.Json.JsonValueKind.Null)
-                        {
-                            var rcaText = ExtractTextFromADF(rcaElement);
-                            if (!string.IsNullOrWhiteSpace(rcaText) && rcaText != "empty")
-                            {
-                                rca = rcaText;
-                                System.Diagnostics.Debug.WriteLine($"✅ Found RCA in field: {fieldName}");
-                                break;
-                            }
-                        }
-                    }
-                    
-                    // If no custom field has RCA, try to extract from description if it contains RCA section
-                    if (rca == "empty" && !string.IsNullOrWhiteSpace(description) && description != "empty")
-                    {
-                        // Check if description contains RCA section
-                        var rcaMatch = Regex.Match(description, @"(?:Root Cause|RCA|Root Cause Analysis)[:\s]*(.+?)(?:\n\n|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-                        if (rcaMatch.Success)
-                        {
-                            rca = rcaMatch.Groups[1].Value.Trim();
-                            // Limit RCA length and remove newlines
-                            if (rca.Length > 500)
-                            {
-                                rca = rca.Substring(0, 500) + "...";
-                            }
-                            rca = Regex.Replace(rca, @"\s+", " ").Trim();
-                            System.Diagnostics.Debug.WriteLine($"✅ Found RCA in description text");
-                        }
-                    }
-                    
-                    // Clean RCA if it still contains JSON or structured data
-                    if (!string.IsNullOrWhiteSpace(rca) && rca != "empty" && (rca.Contains("{") || rca.Contains("[")))
-                    {
-                        // If it's JSON, set to empty
-                        System.Diagnostics.Debug.WriteLine($"⚠️ RCA contains JSON data, skipping");
-                        rca = "";
-                    }
-                    
-                    var status = fields.TryGetProperty("status", out var statusElement) && statusElement.ValueKind != System.Text.Json.JsonValueKind.Null
-                        ? statusElement.GetProperty("name").GetString() ?? "N/A"
-                        : "N/A";
-                    var priority = fields.TryGetProperty("priority", out var priorityElement) && priorityElement.ValueKind != System.Text.Json.JsonValueKind.Null
-                        ? priorityElement.GetProperty("name").GetString() ?? "N/A"
-                        : "N/A";
-                    var assignee = fields.TryGetProperty("assignee", out var assigneeElement) && assigneeElement.ValueKind != System.Text.Json.JsonValueKind.Null
-                        ? assigneeElement.GetProperty("displayName").GetString() ?? "Unassigned"
-                        : "Unassigned";
-                    
-                    var jiraTicketUrl = $"{jiraBaseUrl}/browse/{ticketId}";
-                    var ticketInfo = $@"
-                    📋 **Jira Ticket: {ticketId}**
-                    🔗 {jiraTicketUrl}
-                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    **Summary:** {summary}
-                    **Status:** {status}
-                    **Priority:** {priority}
-                    **Assignee:** {assignee}
-                    **Description:**{description}
-                    **Root Cause Analysis (RCA):**{rca}
-                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    ";
-                    
-                    System.Diagnostics.Debug.WriteLine($"✅ Successfully fetched ticket details for {ticketId}");
-                    return ticketInfo;
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error fetching Jira ticket: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                return null;
-            }
-        }
-
-        // Helper method to extract text from ADF format
-        private string ExtractTextFromADF(JsonElement element)
-        {
-            try
-            {
-                var textParts = new List<string>();
-
-                // Handle different JSON structures
-                if (element.ValueKind == System.Text.Json.JsonValueKind.String)
-                {
-                    // Simple string value
-                    var plainText = element.GetString();
-                    if (!string.IsNullOrWhiteSpace(plainText))
-                    {
-                        return plainText;
-                    }
-                }
-                else if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
-                {
-                    // Try to extract from ADF object format
-                    if (element.TryGetProperty("content", out var contentArray) && 
-                        contentArray.ValueKind == System.Text.Json.JsonValueKind.Array)
-                    {
-                        // First level: iterate through array
-                        foreach (var item in contentArray.EnumerateArray())
-                        {
-                            // Try to get text directly
-                            if (item.TryGetProperty("text", out var directText))
-                            {
-                                var text = directText.GetString();
-                                if (!string.IsNullOrWhiteSpace(text))
-                                    textParts.Add(text);
-                            }
-
-                            // Try nested content structure
-                            if (item.TryGetProperty("content", out var nestedContent) && 
-                                nestedContent.ValueKind == System.Text.Json.JsonValueKind.Array)
-                            {
-                                foreach (var nestedItem in nestedContent.EnumerateArray())
-                                {
-                                    if (nestedItem.TryGetProperty("text", out var nestedText))
-                                    {
-                                        var text = nestedText.GetString();
-                                        if (!string.IsNullOrWhiteSpace(text))
-                                            textParts.Add(text);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Try direct "text" property
-                    else if (element.TryGetProperty("text", out var directTextProp))
-                    {
-                        var text = directTextProp.GetString();
-                        if (!string.IsNullOrWhiteSpace(text))
-                            return text;
-                    }
-                    // Last resort: stringify the whole object
-                    else
-                    {
-                        var rawJson = element.GetRawText();
-                        if (!string.IsNullOrWhiteSpace(rawJson) && rawJson.Length < 1000)
-                        {
-                            return rawJson;
-                        }
-                    }
-                }
-
-                if (textParts.Count > 0)
-                {
-                    return string.Join(" ", textParts);
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error parsing ADF: {ex.Message}");
-            }
-
-            return "empty";
-        }
 
         // AI-based intent detection for opening znode sphere
         private async Task<bool> IsOpenSphereIntentAI(string question)
@@ -511,45 +64,22 @@ Response:";
                     stream = false
                 };
 
-                // Use a separate CancellationTokenSource for this operation
-                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
-                {
-                    try
-                    {
-                        var res = await http.PostAsync(
-                            "http://localhost:11434/api/generate",
-                            new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
-                            cts.Token
-                        );
+                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+                var res = await http.PostAsync(
+                    "http://localhost:11434/api/generate",
+                    new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
+                    _currentCts.Token
+                );
 
-                        if (!res.IsSuccessStatusCode)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"IsOpenSphereIntentAI - HTTP Error: {res.StatusCode}");
-                            return false;
-                        }
+                var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
 
-                        var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+                var output = json.RootElement.GetProperty("response")
+                    .GetString()?.Trim().ToUpper();
 
-                        var output = json.RootElement.GetProperty("response")
-                            .GetString()?.Trim().ToUpper();
-
-                        return output == "OPENSPHERE";
-                    }
-                    catch (OperationCanceledException ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"IsOpenSphereIntentAI - Request timeout (20s): {ex.Message}");
-                        return false;
-                    }
-                    catch (HttpRequestException ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"IsOpenSphereIntentAI - Connection error: {ex.Message}");
-                        return false;
-                    }
-                }
+                return output == "OPENSPHERE";
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"IsOpenSphereIntentAI Error: {ex.Message}");
                 return false;
             }
         }
@@ -576,9 +106,6 @@ Response:";
         public MainWindow()
         {
             InitializeComponent();
-
-            // Load Jira configuration
-            LoadJiraConfig();
 
             selectedpath.Text = projectRoot;
 
@@ -820,107 +347,39 @@ Response:";
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden
             };
 
-            var document = new FlowDocument
+            var paragraph = new Paragraph();
+            var urlRegex = new Regex(@"(https?://[\w\-._~:/?#[\]@!$&'()*+,;=%]+)");
+            int lastIndex = 0;
+            foreach (Match match in urlRegex.Matches(text))
+            {
+                // Add text before the link
+                if (match.Index > lastIndex)
+                {
+                    paragraph.Inlines.Add(new Run(text.Substring(lastIndex, match.Index - lastIndex)));
+                }
+                // Add the hyperlink
+                var link = new Hyperlink(new Run(match.Value))
+                {
+                    NavigateUri = new Uri(match.Value)
+                };
+                link.RequestNavigate += (s, e) =>
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+                };
+                paragraph.Inlines.Add(link);
+                lastIndex = match.Index + match.Length;
+            }
+            // Add any remaining text
+            if (lastIndex < text.Length)
+            {
+                paragraph.Inlines.Add(new Run(text.Substring(lastIndex)));
+            }
+
+            richTextBox.Document = new FlowDocument(paragraph)
             {
                 PagePadding = new Thickness(0),
                 Background = Brushes.Transparent
             };
-
-            // Parse lines and handle markdown formatting
-            var lines = text.Split(new[] { "\n", Environment.NewLine }, StringSplitOptions.None);
-            
-            foreach (var line in lines)
-            {
-                var paragraph = new Paragraph();
-                var trimmedLine = line.Trim();
-
-                if (string.IsNullOrWhiteSpace(trimmedLine))
-                {
-                    document.Blocks.Add(paragraph);
-                    continue;
-                }
-
-                // Check for bold text pattern: **text**
-                var boldPattern = new Regex(@"\*\*([^*]+)\*\*");
-                var urlRegex = new Regex(@"(https?://[\w\-._~:/?#[\]@!$&'()*+,;=%]+)");
-                
-                int lastIndex = 0;
-                var matches = new List<(int Index, int Length, string Text, bool IsBold, bool IsUrl)>();
-
-                // Collect all matches
-                foreach (Match match in boldPattern.Matches(trimmedLine))
-                {
-                    matches.Add((match.Index, match.Length, match.Groups[1].Value, true, false));
-                }
-
-                foreach (Match match in urlRegex.Matches(trimmedLine))
-                {
-                    // Check if this URL is not already inside a bold match
-                    bool isInsideBold = matches.Any(m => m.IsBold && match.Index >= m.Index && match.Index + match.Length <= m.Index + m.Length);
-                    if (!isInsideBold)
-                    {
-                        matches.Add((match.Index, match.Length, match.Value, false, true));
-                    }
-                }
-
-                // Sort matches by index
-                matches = matches.OrderBy(m => m.Index).ToList();
-
-                lastIndex = 0;
-                foreach (var match in matches)
-                {
-                    // Add text before the match
-                    if (match.Index > lastIndex)
-                    {
-                        var beforeText = trimmedLine.Substring(lastIndex, match.Index - lastIndex);
-                        paragraph.Inlines.Add(new Run(beforeText));
-                    }
-
-                    if (match.IsUrl)
-                    {
-                        // Add hyperlink
-                        var link = new Hyperlink(new Run(match.Text))
-                        {
-                            NavigateUri = new Uri(match.Text),
-                            Foreground = Brushes.Cyan
-                        };
-                        link.RequestNavigate += (s, e) =>
-                        {
-                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
-                        };
-                        paragraph.Inlines.Add(link);
-                    }
-                    else if (match.IsBold)
-                    {
-                        // Add bold text
-                        var boldRun = new Run(match.Text)
-                        {
-                            FontWeight = System.Windows.FontWeights.Bold,
-                            Foreground = Brushes.Yellow
-                        };
-                        paragraph.Inlines.Add(boldRun);
-                    }
-
-                    lastIndex = match.Index + match.Length;
-                }
-
-                // Add remaining text
-                if (lastIndex < trimmedLine.Length)
-                {
-                    var remainingText = trimmedLine.Substring(lastIndex);
-                    // Remove any leftover ** markers
-                    remainingText = remainingText.Replace("**", "");
-                    if (!string.IsNullOrEmpty(remainingText))
-                    {
-                        paragraph.Inlines.Add(new Run(remainingText));
-                    }
-                }
-
-                paragraph.Margin = new Thickness(0);
-                document.Blocks.Add(paragraph);
-            }
-
-            richTextBox.Document = document;
 
             var bubble = new Border
             {
@@ -975,46 +434,7 @@ Response:";
             {
                 AddUserMessage(question);
                 QuestionBox.Text = "";
-
-                System.Diagnostics.Debug.WriteLine($"\n=== OnSend Debug ===\nQuestion: '{question}'");
-
-                // Check for Jira ticket intent FIRST (before adding AI bubble)
-                var ticketId = ExtractJiraTicketId(question);
-                System.Diagnostics.Debug.WriteLine($"Extracted Ticket ID: {ticketId}");
-                
-                if (ticketId != null)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Ticket ID found. Checking AI intent...");
-                    var isJiraIntent = await IsOpenJiraIntentAI(question);
-                    System.Diagnostics.Debug.WriteLine($"IsOpenJiraIntentAI returned: {isJiraIntent}");
-                    
-                    if (isJiraIntent)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Opening Jira ticket: {ticketId}");
-                        OpenJiraTicket(ticketId);
-                        
-                        // If token is not configured, just show browser message
-                        if (string.IsNullOrWhiteSpace(jiraToken))
-                        {
-                            System.Diagnostics.Debug.WriteLine($"⚠️ Jira API token not configured. Token value: '{jiraToken}'");
-                            var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
-                            AddAiMessage($"🔗 Opened Jira ticket in browser: {ticketId}");
-                            return;
-                        }
-                        
-                        // Fetch and display ticket description
-                        var ticketDescription = await GetJiraTicketDescription(ticketId);
-                        if (ticketDescription != null)
-                        {
-                            AddAiMessage(ticketDescription);
-                        }
-                        else
-                        {
-                            AddAiMessage($"🔗 Opened Jira ticket: {ticketId}");
-                        }
-                        return;
-                    }
-                }
+                var aiBubble = AddAiMessage("Thinking...💭 ");
 
                 // Check for open sphere intent using AI
                 if (await IsOpenSphereIntentAI(question))
@@ -1026,12 +446,11 @@ Response:";
                         Arguments = "/k znode-sphere-tool",
                         UseShellExecute = true
                     });
+                    AddUserMessage(question);
                     AddAiMessage("🌌 Launched znode-sphere-tool in a new command prompt.");
+                    QuestionBox.Text = "";
                     return;
                 }
-
-                // Only add the thinking bubble if we're proceeding with normal AI processing
-                var aiBubble = AddAiMessage("Thinking...💭 ");
                 bool isSimple = IsSimpleQuery(question);
                 // fallback to AI if uncertain
                 if (!isSimple && question.Length < 25)
@@ -1137,67 +556,46 @@ Response:";
         {
             try
             {
-                var prompt = $@"Classify the query. Respond with ONLY ONE WORD: GREETING or OTHER.
+                var prompt = $@"
+                Classify the user query.
 
-GREETING: hi, hello, hey, thanks, casual conversation
-OTHER: technical questions, requests, anything else
+                Return ONLY one word:
+                GREETING or OTHER
 
-Query: {question}
+                GREETING includes:
+                - hi, hello, hey
+                - thanks, thank you
+                - casual talk
 
-Response:";
+                Everything else is OTHER.
+
+                Query:
+                {question}
+                ";
 
                 var req = new
                 {
                     model = "phi3",
                     prompt = prompt,
-                    stream = false,
-                    options = new
-                    {
-                        temperature = 0.1,  // Very low for classification
-                        top_p = 0.3,        // Reduce randomness
-                        num_predict = 10    // Only expect 1-2 words
-                    }
+                    stream = false
                 };
 
-                // Use a separate CancellationTokenSource for this operation
-                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
-                {
-                    try
-                    {
-                        var res = await http.PostAsync(
-                            "http://localhost:11434/api/generate",
-                            new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
-                            cts.Token
-                        );
+                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                var res = await http.PostAsync(
+                    "http://localhost:11434/api/generate",
+                    new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
+                    _currentCts.Token
+                );
 
-                        if (!res.IsSuccessStatusCode)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"IsSimpleQueryAI - HTTP Error: {res.StatusCode}");
-                            return false;
-                        }
+                var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
 
-                        var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+                var output = json.RootElement.GetProperty("response")
+                    .GetString()?.Trim().ToUpper();
 
-                        var output = json.RootElement.GetProperty("response")
-                            .GetString()?.Trim().ToUpper();
-
-                        return output == "GREETING";
-                    }
-                    catch (OperationCanceledException ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"IsSimpleQueryAI - Request timeout (15s): {ex.Message}");
-                        return false;
-                    }
-                    catch (HttpRequestException ex)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"IsSimpleQueryAI - Connection error: {ex.Message}");
-                        return false;
-                    }
-                }
+                return output == "GREETING";
             }
-            catch (Exception ex)
+            catch
             {
-                System.Diagnostics.Debug.WriteLine($"IsSimpleQueryAI Error: {ex.Message}");
                 return false;
             }
         }
