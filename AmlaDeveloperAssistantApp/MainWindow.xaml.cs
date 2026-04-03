@@ -64,7 +64,7 @@ namespace AmlaDeveloperAssistantApp
                     stream = false
                 };
 
-                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
                 var res = await http.PostAsync(
                     "http://localhost:11434/api/generate",
                     new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
@@ -541,7 +541,11 @@ namespace AmlaDeveloperAssistantApp
             {
                 "error", "exception", "api", "code", "method",
                 "class", "sql", "json", "why", "how", "fix",
-                "issue", "bug"
+                "issue", "bug","znode","sphere","artify","nelli",
+                "troubleshoot","problem","debug","crash","fail","stacktrace",
+                "ecommerce","10x","webstore","headless","commerce",
+                "commerceportal","admin",
+
             };
 
             bool hasTech = techIndicators.Any(k => q.Contains(k));
@@ -1132,7 +1136,8 @@ namespace AmlaDeveloperAssistantApp
 
                 prompt = $@"
                         Answer using ONLY the context.
-
+                        Znode is an ecommerce platform.
+                        
                         If not found, say: I don't know.
 
                         Context:
