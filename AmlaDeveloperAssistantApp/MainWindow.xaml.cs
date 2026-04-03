@@ -972,6 +972,7 @@ namespace AmlaDeveloperAssistantApp
         private async Task<string> SearchVectors(string question)
         {
             var allChunks = new List<VectorChunk>();
+            var allHistoryChunks = new List<VectorChunk>();
 
             if (File.Exists(repoVectorPath))
             {
@@ -988,6 +989,45 @@ namespace AmlaDeveloperAssistantApp
             }
 
             var queryVec = await GetEmbedding(question);
+
+            if (File.Exists(chatHistoryPath))
+            {
+                var historyJson = await File.ReadAllTextAsync(chatHistoryPath);
+                var history = JsonSerializer.Deserialize<List<ChatMessage>>(historyJson);
+                if (history != null)
+                {
+                    foreach (var chunk in history.TakeLast(20)) // take last 20 messages for relevance
+                    {
+                        var enriched = $"History:{chunk.Role.ToLower()} said, {chunk.Content}";
+
+                        var embedding = await GetEmbedding(enriched);
+
+                        allHistoryChunks.Add(new VectorChunk
+                        {
+                            Source = chunk.Role,
+                            Content = enriched,
+                            Embedding = embedding
+                        });
+                    }
+                    allChunks.AddRange(allHistoryChunks
+                            .Select(v => new
+                            {
+                                v.Content,
+                                v.Source,
+                                Score = CosineSimilarity(queryVec, v.Embedding),
+                                v.Embedding
+                            })
+                            .Where(x => x.Score > 0.60)
+                            .OrderByDescending(x => x.Score)
+                            .Take(10)
+                            .ToList().Select(o => new VectorChunk
+                            {
+                                Source = o.Source,
+                                Content = o.Content,
+                                Embedding = o.Embedding
+                            }));
+                }
+            }
 
             var ranked = allChunks
                 .Select(v => new
@@ -1117,6 +1157,7 @@ namespace AmlaDeveloperAssistantApp
                         num_predict = 500 // 🔥 reduced from 300
                     }
                 };
+
                 request = new HttpRequestMessage(HttpMethod.Post, "http://localhost:11434/api/generate")
                 {
                     Content = new StringContent(

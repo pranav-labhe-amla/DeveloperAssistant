@@ -98,12 +98,12 @@
                        Visibility="{Binding Text.IsEmpty, ElementName=QuestionBox, Converter={StaticResource BoolToVisibilityConverter}}"/>
                 <Button Content="Send"
                         Name="SendButton"
-                        Click="OnSend"
+                        Click="OnSend"                        
                         Width="40"
                         Height="28"
                         HorizontalAlignment="Right"
                         VerticalAlignment="Bottom"
-                        Margin="0,4,4,4"
+                        Margin="0,3,3,3"
                         Background="#0E639C"
                         Foreground="White"/>
         </Grid>
