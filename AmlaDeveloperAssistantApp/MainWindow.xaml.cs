@@ -1,4 +1,5 @@
 ﻿using HtmlAgilityPack;
+using AmlaDeveloperAssistantApp.Services;
 
 using System;
 using System.Collections.Generic;
@@ -36,6 +37,15 @@ namespace AmlaDeveloperAssistantApp
         private string jiraBaseUrl = "https://amla.atlassian.net";
         private string jiraEmail = "";
 
+        // Jira services
+        private JiraService? _jiraService;
+        private FixSuggestionService? _fixSuggestionService;
+
+        // Jira configuration constants
+        private const string JiraBaseUrl = "https://amla.atlassian.net";
+        private const string JiraUsername = "ashish.patle@amla.io";
+        private const string JiraAuthToken = "ATATT3xFfGF0E1JzdmvVk0DqNSBR-IkuD5SEuCr68nCCw_Ol9kG59GE5z1iiSq-JduklLnZ0NEY4XPvQodByHn207-CKVYmiBe_OzSEcq_r4LM1gKX0xlx3WUo6e6sSK8sTYw209jHMQ98dvYNOl5lvM35qpTPLPBG-ZOvUSGEbtUJtr8RwClzk=F9AE9E3E";
+
         // Load configuration from appsettings.json
         private void LoadJiraConfig()
         {
@@ -51,12 +61,12 @@ namespace AmlaDeveloperAssistantApp
                 {
                     var json = System.IO.File.ReadAllText(configPath);
                     using var doc = JsonDocument.Parse(json);
-                    
+
                     var jiraSettings = doc.RootElement.GetProperty("JiraSettings");
                     jiraBaseUrl = jiraSettings.GetProperty("BaseUrl").GetString() ?? "https://amla.atlassian.net";
                     jiraEmail = jiraSettings.GetProperty("Email").GetString() ?? "";
                     jiraToken = jiraSettings.GetProperty("ApiToken").GetString() ?? "";
-                    
+
                 }
             }
             catch (Exception ex)
@@ -124,7 +134,7 @@ Response:";
                             .GetString()?.Trim().ToUpper();
 
                         var isJiraIntent = output == "OPENJIRA" || output == "OPENJIRA.";
-                        
+
                         return isJiraIntent;
                     }
                     catch (OperationCanceledException ex)
@@ -149,8 +159,8 @@ Response:";
             try
             {
                 var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
-                
-                
+
+
                 // Method 1: Direct shell execute (works on Windows with URL protocol handlers)
                 try
                 {
@@ -233,15 +243,15 @@ Response:";
         {
             try
             {
-                
+
                 // Check if token is available
                 if (string.IsNullOrWhiteSpace(jiraToken))
                 {
                     return null;
                 }
-                
+
                 var apiUrl = $"{jiraBaseUrl}/rest/api/3/issue/{ticketId}?fields=summary,description,status,priority,assignee,customfield_10000,customfield_10001,customfield_10002,customfield_10003,customfield_10004,customfield_10005";
-                
+
                 using (var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, apiUrl))
                 {
                     // Use Basic Auth with email and API token (required for Jira Cloud)
@@ -249,36 +259,36 @@ Response:";
                     var credentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{jiraEmail}:{jiraToken}"));
                     request.Headers.Add("Authorization", $"Basic {credentials}");
                     request.Headers.Add("Accept", "application/json");
-                    
+
                     var response = await http.SendAsync(request);
-                    
+
                     if (!response.IsSuccessStatusCode)
                     {
                         var errorContent = await response.Content.ReadAsStringAsync();
-                        
-                       
-                        
+
+
+
                         return null;
                     }
-                    
+
                     var content = await response.Content.ReadAsStringAsync();
-                    
+
                     var json = JsonDocument.Parse(content);
                     var fields = json.RootElement.GetProperty("fields");
-                    
+
                     var summary = fields.GetProperty("summary").GetString() ?? "N/A";
-                    
+
                     // Handle Jira Cloud's complex description format (ADF - Atlassian Document Format)
                     string description = "empty";
                     if (fields.TryGetProperty("description", out var descElement) && descElement.ValueKind != System.Text.Json.JsonValueKind.Null)
                     {
                         description = ExtractTextFromADF(descElement);
                     }
-                    
+
                     // Extract RCA from custom fields - try multiple possible field IDs
                     string rca = "empty";
                     string[] possibleRCAFields = { "customfield_10000", "customfield_10001", "customfield_10002", "customfield_10003", "customfield_10004", "customfield_10005" };
-                    
+
                     foreach (var fieldName in possibleRCAFields)
                     {
                         if (fields.TryGetProperty(fieldName, out var rcaElement) && rcaElement.ValueKind != System.Text.Json.JsonValueKind.Null)
@@ -291,7 +301,7 @@ Response:";
                             }
                         }
                     }
-                    
+
                     // If no custom field has RCA, try to extract from description if it contains RCA section
                     if (rca == "empty" && !string.IsNullOrWhiteSpace(description) && description != "empty")
                     {
@@ -308,14 +318,14 @@ Response:";
                             rca = Regex.Replace(rca, @"\s+", " ").Trim();
                         }
                     }
-                    
+
                     // Clean RCA if it still contains JSON or structured data
                     if (!string.IsNullOrWhiteSpace(rca) && rca != "empty" && (rca.Contains("{") || rca.Contains("[")))
                     {
                         // If it's JSON, set to empty
                         rca = "";
                     }
-                    
+
                     var status = fields.TryGetProperty("status", out var statusElement) && statusElement.ValueKind != System.Text.Json.JsonValueKind.Null
                         ? statusElement.GetProperty("name").GetString() ?? "N/A"
                         : "N/A";
@@ -325,7 +335,7 @@ Response:";
                     var assignee = fields.TryGetProperty("assignee", out var assigneeElement) && assigneeElement.ValueKind != System.Text.Json.JsonValueKind.Null
                         ? assigneeElement.GetProperty("displayName").GetString() ?? "Unassigned"
                         : "Unassigned";
-                    
+
                     var jiraTicketUrl = $"{jiraBaseUrl}/browse/{ticketId}";
                     var ticketInfo = $@"
                     📋 **Jira Ticket: {ticketId}**
@@ -339,7 +349,7 @@ Response:";
                     **Root Cause Analysis (RCA):**{rca}
                     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
                     ";
-                    
+
                     return ticketInfo;
                 }
             }
@@ -369,7 +379,7 @@ Response:";
                 else if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
                 {
                     // Try to extract from ADF object format
-                    if (element.TryGetProperty("content", out var contentArray) && 
+                    if (element.TryGetProperty("content", out var contentArray) &&
                         contentArray.ValueKind == System.Text.Json.JsonValueKind.Array)
                     {
                         // First level: iterate through array
@@ -384,7 +394,7 @@ Response:";
                             }
 
                             // Try nested content structure
-                            if (item.TryGetProperty("content", out var nestedContent) && 
+                            if (item.TryGetProperty("content", out var nestedContent) &&
                                 nestedContent.ValueKind == System.Text.Json.JsonValueKind.Array)
                             {
                                 foreach (var nestedItem in nestedContent.EnumerateArray())
@@ -480,7 +490,6 @@ Response:";
                 return false;
             }
         }
-
         private readonly string repoVectorPath;
         private readonly string kbVectorPath;
         private readonly string iconPath;
@@ -537,6 +546,18 @@ Response:";
                 var json = File.ReadAllText(chatHistoryPath);
                 _chatHistory = JsonSerializer.Deserialize<List<ChatMessage>>(json) ?? new();
             }
+
+            // Initialize Jira services
+            try
+            {
+                _jiraService = new JiraService(JiraBaseUrl, JiraUsername, JiraAuthToken);
+                _fixSuggestionService = new FixSuggestionService();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Failed to initialize Jira service: {ex.Message}");
+            }
+
             // position bottom right
             var area = Screen.PrimaryScreen.WorkingArea;
             Left = area.Width - Width - 10;
@@ -833,6 +854,10 @@ Response:";
             try
             {
                 AddUserMessage(question);
+
+                // Check if this is a Jira ticket key
+                HandleJiraTicketInput(question);
+
                 QuestionBox.Text = "";
 
                 try
@@ -869,7 +894,8 @@ Response:";
                             return;
                         }
                     }
-                }catch (Exception ex)
+                }
+                catch (Exception ex)
                 {
                     AddAiMessage("⚠️ Jira intent detection error: " + ex.Message);
                 }
@@ -1734,6 +1760,298 @@ Response:";
             this.Hide();       // 👈 hide instead
         }
 
+        // IMPROVED: Handle Jira ticket input with AI intent detection
+        private async void HandleJiraTicketInput(string input)
+        {
+            if (_jiraService == null)
+            {
+                return; // Silently return, let normal processing continue
+            }
+
+            // First, try regex pattern match (fast path)
+            var ticketKeyPattern = @"^[A-Z][A-Z0-9]+-\d+$";
+            if (Regex.IsMatch(input.ToUpper().Trim(), ticketKeyPattern))
+            {
+                // Direct ticket key provided
+                await FetchAndDisplayTicket(input.ToUpper().Trim());
+                return;
+            }
+
+            // Second, use AI to detect if this is a Jira-related query
+            var isJiraIntent = await IsJiraTicketIntentAI(input);
+            if (!isJiraIntent)
+            {
+                return; // Not a Jira query, let normal processing continue
+            }
+
+            // Third, extract ticket ID from the query using AI
+            var extractedTicketId = await ExtractJiraTicketIdAI(input);
+            if (!string.IsNullOrEmpty(extractedTicketId))
+            {
+                await FetchAndDisplayTicket(extractedTicketId);
+            }
+            else
+            {
+                // AI detected Jira intent but couldn't extract ticket ID
+                AddAiMessage("❌ I detected a Jira request, but couldn't extract a valid ticket ID.\n\nTry:\n• 'Show PROJ-123'\n• 'Open BUG-456'\n• 'Get FEAT-789'");
+            }
+        }
+
+        // NEW: Helper method to fetch and display ticket
+        private async Task FetchAndDisplayTicket(string ticketKey)
+        {
+            try
+            {
+                AddAiMessage($"🎫 Fetching Jira ticket: {ticketKey}");
+                var bubble = AddAiMessage("⏳ Loading ticket...");
+                var textBlock = (System.Windows.Controls.RichTextBox)bubble.Child;
+
+                var ticket = await _jiraService.GetTicketAsync(ticketKey);
+
+                // Display ticket information
+                DisplayTicketWithLink(textBlock, ticket);
+
+                // Add "Get Fix Suggestions" button
+                AddFixSuggestionButton(ticket);
+            }
+            catch (Exception ex)
+            {
+                AddAiMessage($"❌ Error fetching ticket: {ex.Message}");
+            }
+        }
+
+        // NEW: Display ticket with clickable link
+        private void DisplayTicketWithLink(System.Windows.Controls.RichTextBox rtb, JiraTicket ticket)
+        {
+            rtb.Document.Blocks.Clear();
+
+            var paragraph = new Paragraph();
+
+            paragraph.Inlines.Add(new Run($"🎫 JIRA TICKET: {ticket.Key}\n\n"));
+            paragraph.Inlines.Add(new Run($"📋 Summary: {ticket.Summary}\n"));
+
+            var link = new Hyperlink(new Run("🔗 Open in Browser"))
+            {
+                NavigateUri = new Uri(ticket.BrowserUrl)
+            };
+            link.RequestNavigate += (s, e) =>
+            {
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri)
+                    { UseShellExecute = true }
+                );
+            };
+            paragraph.Inlines.Add(link);
+
+            paragraph.Inlines.Add(new Run($"\n📊 Status: {ticket.Status}"));
+            paragraph.Inlines.Add(new Run($"\n⚡ Priority: {ticket.Priority}"));
+            paragraph.Inlines.Add(new Run($"\n🏷️ Type: {ticket.IssueType}\n\n"));
+            paragraph.Inlines.Add(new Run($"📝 Description:\n{ticket.Description}"));
+
+            rtb.Document.Blocks.Add(paragraph);
+        }
+
+        // NEW: Add fix suggestion button
+        private void AddFixSuggestionButton(JiraTicket ticket)
+        {
+            var button = new System.Windows.Controls.Button
+            {
+                Content = $"💡 Get Fix Suggestions for {ticket.Key}",
+                Background = Brushes.DarkGreen,
+                Foreground = Brushes.White,
+                Padding = new Thickness(10, 5, 10, 5),
+                Margin = new Thickness(5),
+                FontSize = 12,
+                Cursor = System.Windows.Input.Cursors.Hand
+            };
+
+            button.Click += async (s, e) =>
+            {
+                await GetFixSuggestionsForTicket(ticket);
+            };
+
+            var container = new Border
+            {
+                Background = Brushes.Transparent,
+                Padding = new Thickness(10),
+                Margin = new Thickness(5, 5, 60, 5),
+                HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+                Child = button
+            };
+
+            ChatPanel.Children.Add(container);
+            ChatScroll.ScrollToEnd();
+        }
+
+        // NEW: Get fix suggestions from Ollama
+        private async Task GetFixSuggestionsForTicket(JiraTicket ticket)
+        {
+            if (_fixSuggestionService == null || string.IsNullOrWhiteSpace(ticket.Description))
+            {
+                AddAiMessage("❌ Cannot analyze ticket");
+                return;
+            }
+
+            _isProcessing = true;
+            SetUiEnabled(false);
+
+            try
+            {
+                var bubble = AddAiMessage("🧠 Analyzing ticket with AI...\n⏳ This may take a moment...");
+                var textBlock = (System.Windows.Controls.RichTextBox)bubble.Child;
+
+                var projectContext = await BuildProjectContext();
+
+                string context = "";
+                try
+                {
+                    context = await SearchVectors(ticket.Description);
+                }
+                catch { }
+                var suggestion = await _fixSuggestionService.AnalyzeTicketAsync(
+                    ticket.Key,
+                    $"context:{context}\n{ticket.Description}",
+                    projectContext
+                );
+
+                if (suggestion.IsSuccess)
+                {
+                    DisplayFixSuggestion(textBlock, suggestion);
+                }
+                else
+                {
+                    SetUIMessage(textBlock, $"❌ {suggestion.Error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                AddAiMessage($"❌ Error getting suggestions: {ex.Message}");
+            }
+            finally
+            {
+                _isProcessing = false;
+                SetUiEnabled(true);
+            }
+        }
+
+        // NEW: Display fix suggestions in formatted way
+        private void DisplayFixSuggestion(System.Windows.Controls.RichTextBox rtb, FixSuggestion suggestion)
+        {
+            var sb = new StringBuilder();
+
+            sb.AppendLine($"✅ FIX SUGGESTIONS FOR {suggestion.TicketKey}\n");
+            sb.AppendLine("═══════════════════════════════════════\n");
+
+            if (!string.IsNullOrWhiteSpace(suggestion.IssueSummary))
+                sb.AppendLine($"📌 Issue Summary:\n{suggestion.IssueSummary}\n");
+
+            if (!string.IsNullOrWhiteSpace(suggestion.FixType))
+                sb.AppendLine($"🔧 Fix Type: {suggestion.FixType}\n");
+
+            if (!string.IsNullOrWhiteSpace(suggestion.AffectedAreas))
+                sb.AppendLine($"📍 Affected Areas:\n{suggestion.AffectedAreas}\n");
+
+            if (!string.IsNullOrWhiteSpace(suggestion.SuggestedFiles))
+                sb.AppendLine($"📁 Suggested Files:\n{suggestion.SuggestedFiles}\n");
+
+            if (!string.IsNullOrWhiteSpace(suggestion.MethodsToCheck))
+                sb.AppendLine($"⚙️ Methods to Check:\n{suggestion.MethodsToCheck}\n");
+
+            if (!string.IsNullOrWhiteSpace(suggestion.PriorityAreas))
+                sb.AppendLine($"🎯 Priority Areas:\n{suggestion.PriorityAreas}\n");
+
+            if (!string.IsNullOrWhiteSpace(suggestion.SuggestedApproach))
+                sb.AppendLine($"💡 Suggested Approach:\n{suggestion.SuggestedApproach}\n");
+
+            SetUIMessage(rtb, sb.ToString());
+        }
+
+        // NEW: Build project context for better analysis
+        private async Task<string> BuildProjectContext()
+        {
+            var context = new StringBuilder();
+
+            try
+            {
+                if (Directory.Exists(projectRoot))
+                {
+                    context.AppendLine($"Project Root: {projectRoot}");
+
+                    var projectFiles = Directory.GetFiles(projectRoot, "*.csproj", SearchOption.AllDirectories);
+                    if (projectFiles.Length > 0)
+                    {
+                        context.AppendLine($"Found {projectFiles.Length} C# projects");
+                    }
+
+                    var srcDir = Path.Combine(projectRoot, "src");
+                    if (Directory.Exists(srcDir))
+                    {
+                        var csFiles = Directory.GetFiles(srcDir, "*.cs", SearchOption.AllDirectories);
+                        context.AppendLine($"Source files: {csFiles.Length}");
+                    }
+                }
+            }
+            catch { }
+
+            return context.ToString();
+        }
+
+        // AI-based intent detection for Jira ticket input
+        private async Task<bool> IsJiraTicketIntentAI(string question)
+        {
+            try
+            {
+                var prompt = $@"
+                Classify the user query intent.
+
+                Return ONLY one word:
+                JIRA or OTHER
+
+                JIRA includes:
+                - open jira ticket
+                - show jira issue
+                - fetch ticket
+                - get jira ticket
+                - jira ticket PROJ-123
+                - any intent to open/show/get a jira ticket or issue
+                - mention of ticket keys like PROJ-123, BUG-456, FEAT-789
+
+                OTHER includes:
+                - general questions
+                - code questions
+                - anything not related to jira
+
+                Query:
+                {question}
+                ";
+
+                var req = new
+                {
+                    model = "phi3",
+                    prompt = prompt,
+                    stream = false
+                };
+
+                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+                var res = await http.PostAsync(
+                    "http://localhost:11434/api/generate",
+                    new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
+                    _currentCts.Token
+                );
+
+                var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+
+                var output = json.RootElement.GetProperty("response")
+                    .GetString()?.Trim().ToUpper();
+
+                return output == "JIRA";
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private void QuestionBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             var textBox = sender as System.Windows.Controls.TextBox;
@@ -1753,6 +2071,67 @@ Response:";
             double desiredHeight = formattedText.Height + textBox.Padding.Top + textBox.Padding.Bottom + 10;
             textBox.Height = Math.Min(Math.Max(desiredHeight, textBox.MinHeight), textBox.MaxHeight);
 
+        }
+
+        // Extract Jira ticket ID from user query using AI
+        private async Task<string?> ExtractJiraTicketIdAI(string question)
+        {
+            try
+            {
+                var prompt = $@"
+                Extract the Jira ticket ID from the user query.
+
+                Return ONLY the ticket ID or NONE if not found.
+                Ticket ID format: PROJECT_KEY-NUMBER (e.g., PROJ-123, BUG-456)
+
+                Examples:
+                Query: 'show me PROJ-123'
+                Response: PROJ-123
+
+                Query: 'open ticket BUG-456'
+                Response: BUG-456
+
+                Query: 'what is FEAT-789 about'
+                Response: FEAT-789
+
+                Query: 'fix this bug'
+                Response: NONE
+
+                Query: '{question}'
+                Response:";
+
+                var req = new
+                {
+                    model = "phi3",
+                    prompt = prompt,
+                    stream = false
+                };
+
+                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                var res = await http.PostAsync(
+                    "http://localhost:11434/api/generate",
+                    new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
+                    _currentCts.Token
+                );
+
+                var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
+
+                var output = json.RootElement.GetProperty("response")
+                    .GetString()?.Trim().ToUpper();
+
+                // Validate extracted ticket format
+                var ticketKeyPattern = @"^[A-Z][A-Z0-9]+-\d+$";
+                if (!string.IsNullOrEmpty(output) && output != "NONE" && Regex.IsMatch(output, ticketKeyPattern))
+                {
+                    return output;
+                }
+
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
         }
     }
 }
