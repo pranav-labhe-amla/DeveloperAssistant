@@ -1,8 +1,10 @@
-using System;
+﻿using System;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using System.Net.Http;
+
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace AmlaDeveloperAssistantApp.Services
 {
@@ -19,6 +21,76 @@ namespace AmlaDeveloperAssistantApp.Services
             {
                 Timeout = Timeout.InfiniteTimeSpan
             };
+        }
+        // Get fix suggestions for a Jira ticket
+        public async Task<FixSuggestion> GetFixSuggestionsForTicket(JiraTicket ticket, AssistantAiService aiService, string projectRoot)
+        {
+            if (ticket == null || string.IsNullOrWhiteSpace(ticket.Description))
+            {
+                return new FixSuggestion { Error = "❌ Cannot analyze ticket", IsSuccess = false };
+            }
+            var projectContext = await aiService.BuildProjectContext(projectRoot);
+            string kbcontext = "";
+            string projcontext = "";
+            try
+            {
+                kbcontext = await aiService.SearchKBVectors(ticket.Description);
+                projcontext = await aiService.SearchRepoVectors(ticket.Description);
+            }
+            catch { }
+            var suggestion = await AnalyzeTicketAsync(
+                ticket.Key,
+                $"{ticket.Description}\n INFORMATION CONTEXT:{kbcontext}\n",
+                $"{projectContext}{projcontext}"
+            );
+            return suggestion;
+        }
+
+        // Get fix suggestions prompt for a Jira ticket
+        public async Task<string> GetFixSuggestionsPromptForTicket(JiraTicket ticket, AssistantAiService aiService, string projectRoot)
+        {
+            if (ticket == null || string.IsNullOrWhiteSpace(ticket.Description))
+            {
+                return "❌ Cannot get the ticket";
+            }
+            var projectContext = await aiService.BuildProjectContext(projectRoot);
+            string kbcontext = "";
+            string projcontext = "";
+            try
+            {
+                kbcontext = await aiService.SearchKBVectors(ticket.Description);
+                projcontext = await aiService.SearchRepoVectors(ticket.Description);
+            }
+            catch { }
+            var suggestion = BuildAnalysisPrompt(
+                ticket.Key,
+                $"{ticket.Description}\n INFORMATION CONTEXT:{kbcontext}\n",
+                $"{projectContext}{projcontext}"
+            );
+            return suggestion;
+        }
+
+        // Display fix suggestions in formatted way
+        public string FormatFixSuggestion(FixSuggestion suggestion)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"✅ FIX SUGGESTIONS FOR {suggestion.TicketKey}\n");
+            sb.AppendLine("═══════════════════════════════════════\n");
+            if (!string.IsNullOrWhiteSpace(suggestion.IssueSummary))
+                sb.AppendLine($"📌 Issue Summary:\n{suggestion.IssueSummary}\n");
+            if (!string.IsNullOrWhiteSpace(suggestion.FixType))
+                sb.AppendLine($"🔧 Fix Type: {suggestion.FixType}\n");
+            if (!string.IsNullOrWhiteSpace(suggestion.AffectedAreas))
+                sb.AppendLine($"📍 Affected Areas:\n{suggestion.AffectedAreas}\n");
+            if (!string.IsNullOrWhiteSpace(suggestion.SuggestedFiles))
+                sb.AppendLine($"📁 Suggested Files:\n{suggestion.SuggestedFiles}\n");
+            if (!string.IsNullOrWhiteSpace(suggestion.MethodsToCheck))
+                sb.AppendLine($"⚙️ Methods to Check:\n{suggestion.MethodsToCheck}\n");
+            if (!string.IsNullOrWhiteSpace(suggestion.PriorityAreas))
+                sb.AppendLine($"🎯 Priority Areas:\n{suggestion.PriorityAreas}\n");
+            if (!string.IsNullOrWhiteSpace(suggestion.SuggestedApproach))
+                sb.AppendLine($"💡 Suggested Approach:\n{suggestion.SuggestedApproach}\n");
+            return sb.ToString();
         }
 
         /// <summary>
@@ -38,7 +110,7 @@ namespace AmlaDeveloperAssistantApp.Services
                     options = new
                     {
                         temperature = 0.3,
-                        num_predict = 1000
+                        num_predict = 1500
                     }
                 };
 
@@ -77,8 +149,10 @@ namespace AmlaDeveloperAssistantApp.Services
 
         private string BuildAnalysisPrompt(string ticketKey, string description, string projectContext)
         {
+            //You are a code analysis assistant. Analyze the following Jira ticket and provide structured fix suggestions.
             return $@"
-You are a code analysis assistant. Analyze the following Jira ticket and provide structured fix suggestions.
+You are a senior developer and code analysis assistant debugging a production issue.
+Analyze the Jira ticket, explain the problem and its impact, include relevant information from the provided KB context if available, and provide clear, code-focused guidance on where to look, what to check, and how to fix the issue.
 
 TICKET KEY: {ticketKey}
 

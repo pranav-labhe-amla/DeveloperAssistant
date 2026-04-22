@@ -33,463 +33,24 @@ namespace AmlaDeveloperAssistantApp
     public partial class MainWindow : Window
     {
         private string projectRoot = @"D:\10x";
-        private string jiraToken = "";
-        private string jiraBaseUrl = "https://amla.atlassian.net";
-        private string jiraEmail = "";
+        private string jiraToken = Constants.JiraAuthToken;
+        private string jiraBaseUrl = Constants.JiraBaseUrl;
+        private string jiraEmail = Constants.JiraUsername;
 
         // Jira services
         private JiraService? _jiraService;
         private FixSuggestionService? _fixSuggestionService;
 
-        // Jira configuration constants
-        private const string JiraBaseUrl = "https://amla.atlassian.net";
-        private const string JiraUsername = "ashish.patle@amla.io";
-        private const string JiraAuthToken = "ATATT3xFfGF0KXDqIG-tm-lxAIer4DuExbAD6CuoGWRVbfv23_hKzXtPfBdG07XQhjB7oe56oH1ZIxU_d-GGyU5UIFSpHhptdgervDEkcYRU0ngBXPUMmtuZ0fjpLweup8Za4OKkzhKuy2_2WXodFbdYgqFNsQeQ4Kp3kJx6oY1XWLrj-gRpJFY=12982C56";
+        private AssistantAiService _aiService;
 
-        // Load configuration from appsettings.json
-        private void LoadJiraConfig()
-        {
-            try
-            {
-                var configPath = System.IO.Path.Combine(
-                    AppDomain.CurrentDomain.BaseDirectory,
-                    "Config",
-                    "appsettings.json"
-                );
+        // Jira configuration constants are now in Constants.cs
 
-                if (System.IO.File.Exists(configPath))
-                {
-                    var json = System.IO.File.ReadAllText(configPath);
-                    using var doc = JsonDocument.Parse(json);
-
-                    var jiraSettings = doc.RootElement.GetProperty("JiraSettings");
-                    jiraBaseUrl = jiraSettings.GetProperty("BaseUrl").GetString() ?? "https://amla.atlassian.net";
-                    jiraEmail = jiraSettings.GetProperty("Email").GetString() ?? "";
-                    jiraToken = jiraSettings.GetProperty("ApiToken").GetString() ?? "";
-
-                }
-            }
-            catch (Exception ex)
-            {
-            }
-        }
-
-        // Extract Jira ticket ID from question
-        private string? ExtractJiraTicketId(string question)
-        {
-            // Updated regex to match ticket IDs like Z10-32933, ABC-123, PROJ-456, etc.
-            // Matches: (letters/digits)-digits
-            var match = Regex.Match(question, @"\b([A-Z0-9]+-\d+)\b", RegexOptions.IgnoreCase);
-            var ticketId = match.Success ? match.Groups[1].Value.ToUpper() : null;
-            return ticketId;
-        }
-
-        // AI-based intent detection for opening Jira tickets
-        private async Task<bool> IsOpenJiraIntentAI(string question)
-        {
-            try
-            {
-                var prompt = $@"You are a query classifier. Respond with ONLY ONE WORD: OPENJIRA or OTHER.
-
-OPENJIRA: opening/viewing/showing Jira tickets (any ticket ID like Z10-32933, ABC-123, etc.)
-OTHER: anything else
-
-Query: {question}
-
-Response:";
-
-                var req = new
-                {
-                    model = "phi3",
-                    prompt = prompt,
-                    stream = false,
-                    options = new
-                    {
-                        temperature = 0.1,  // Very low for classification
-                        top_p = 0.3,        // Reduce randomness
-                        num_predict = 10    // Only expect 1-2 words
-                    }
-                };
-
-                // Use a separate CancellationTokenSource for this operation
-                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
-                {
-                    try
-                    {
-                        var res = await http.PostAsync(
-                            "http://localhost:11434/api/generate",
-                            new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
-                            cts.Token
-                        );
-
-                        if (!res.IsSuccessStatusCode)
-                        {
-                            var errorContent = await res.Content.ReadAsStringAsync();
-                            return false;
-                        }
-
-                        var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
-
-                        var output = json.RootElement.GetProperty("response")
-                            .GetString()?.Trim().ToUpper();
-
-                        var isJiraIntent = output == "OPENJIRA" || output == "OPENJIRA.";
-
-                        return isJiraIntent;
-                    }
-                    catch (OperationCanceledException ex)
-                    {
-                        return false;
-                    }
-                    catch (HttpRequestException ex)
-                    {
-                        return false;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                return false;
-            }
-        }
-
-        // Open Jira ticket in browser
-        private void OpenJiraTicket(string ticketId)
-        {
-            try
-            {
-                var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
-
-
-                // Method 1: Direct shell execute (works on Windows with URL protocol handlers)
-                try
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = jiraUrl,
-                        UseShellExecute = true
-                    };
-                    System.Diagnostics.Process.Start(psi);
-                    return;
-                }
-                catch (Exception ex1)
-                {
-                }
-
-                // Method 2: Use cmd.exe with proper quoting
-                try
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "cmd.exe",
-                        Arguments = $"/c start \"\" \"{jiraUrl}\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    };
-                    var process = System.Diagnostics.Process.Start(psi);
-                    process?.WaitForExit(2000);
-                    return;
-                }
-                catch (Exception ex2)
-                {
-                }
-
-                // Method 3: Use explorer.exe to open the URL
-                try
-                {
-                    var psi = new System.Diagnostics.ProcessStartInfo
-                    {
-                        FileName = "explorer.exe",
-                        Arguments = jiraUrl,
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-                    System.Diagnostics.Process.Start(psi);
-                    return;
-                }
-                catch (Exception ex3)
-                {
-                }
-
-                // Method 4: Use control panel handler
-                try
-                {
-                    System.Diagnostics.ProcessStartInfo psi = new System.Diagnostics.ProcessStartInfo()
-                    {
-                        FileName = jiraUrl,
-                        UseShellExecute = true,
-                        CreateNoWindow = true
-                    };
-                    var proc = System.Diagnostics.Process.Start(psi);
-                    return;
-                }
-                catch (Exception ex4)
-                {
-                }
-
-                // If all methods fail
-                AddAiMessage($"⚠️ Could not open browser automatically. URL: {jiraUrl}");
-            }
-            catch (Exception ex)
-            {
-                AddAiMessage($"❌ Failed to open Jira ticket: {ex.Message}");
-            }
-        }
-
-        // Fetch Jira ticket description using Jira API
-        private async Task<string?> GetJiraTicketDescription(string ticketId)
-        {
-            try
-            {
-
-                // Check if token is available
-                if (string.IsNullOrWhiteSpace(jiraToken))
-                {
-                    return null;
-                }
-
-                var apiUrl = $"{jiraBaseUrl}/rest/api/3/issue/{ticketId}?fields=summary,description,status,priority,assignee,customfield_10000,customfield_10001,customfield_10002,customfield_10003,customfield_10004,customfield_10005";
-
-                using (var request = new System.Net.Http.HttpRequestMessage(System.Net.Http.HttpMethod.Get, apiUrl))
-                {
-                    // Use Basic Auth with email and API token (required for Jira Cloud)
-                    // Email and token are loaded from appsettings.json
-                    var credentials = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{jiraEmail}:{jiraToken}"));
-                    request.Headers.Add("Authorization", $"Basic {credentials}");
-                    request.Headers.Add("Accept", "application/json");
-
-                    var response = await http.SendAsync(request);
-
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        var errorContent = await response.Content.ReadAsStringAsync();
-
-
-
-                        return null;
-                    }
-
-                    var content = await response.Content.ReadAsStringAsync();
-
-                    var json = JsonDocument.Parse(content);
-                    var fields = json.RootElement.GetProperty("fields");
-
-                    var summary = fields.GetProperty("summary").GetString() ?? "N/A";
-
-                    // Handle Jira Cloud's complex description format (ADF - Atlassian Document Format)
-                    string description = "empty";
-                    if (fields.TryGetProperty("description", out var descElement) && descElement.ValueKind != System.Text.Json.JsonValueKind.Null)
-                    {
-                        description = ExtractTextFromADF(descElement);
-                    }
-
-                    // Extract RCA from custom fields - try multiple possible field IDs
-                    string rca = "empty";
-                    string[] possibleRCAFields = { "customfield_10000", "customfield_10001", "customfield_10002", "customfield_10003", "customfield_10004", "customfield_10005" };
-
-                    foreach (var fieldName in possibleRCAFields)
-                    {
-                        if (fields.TryGetProperty(fieldName, out var rcaElement) && rcaElement.ValueKind != System.Text.Json.JsonValueKind.Null)
-                        {
-                            var rcaText = ExtractTextFromADF(rcaElement);
-                            if (!string.IsNullOrWhiteSpace(rcaText) && rcaText != "empty")
-                            {
-                                rca = rcaText;
-                                break;
-                            }
-                        }
-                    }
-
-                    // If no custom field has RCA, try to extract from description if it contains RCA section
-                    if (rca == "empty" && !string.IsNullOrWhiteSpace(description) && description != "empty")
-                    {
-                        // Check if description contains RCA section
-                        var rcaMatch = Regex.Match(description, @"(?:Root Cause|RCA|Root Cause Analysis)[:\s]*(.+?)(?:\n\n|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-                        if (rcaMatch.Success)
-                        {
-                            rca = rcaMatch.Groups[1].Value.Trim();
-                            // Limit RCA length and remove newlines
-                            if (rca.Length > 500)
-                            {
-                                rca = rca.Substring(0, 500) + "...";
-                            }
-                            rca = Regex.Replace(rca, @"\s+", " ").Trim();
-                        }
-                    }
-
-                    // Clean RCA if it still contains JSON or structured data
-                    if (!string.IsNullOrWhiteSpace(rca) && rca != "empty" && (rca.Contains("{") || rca.Contains("[")))
-                    {
-                        // If it's JSON, set to empty
-                        rca = "";
-                    }
-
-                    var status = fields.TryGetProperty("status", out var statusElement) && statusElement.ValueKind != System.Text.Json.JsonValueKind.Null
-                        ? statusElement.GetProperty("name").GetString() ?? "N/A"
-                        : "N/A";
-                    var priority = fields.TryGetProperty("priority", out var priorityElement) && priorityElement.ValueKind != System.Text.Json.JsonValueKind.Null
-                        ? priorityElement.GetProperty("name").GetString() ?? "N/A"
-                        : "N/A";
-                    var assignee = fields.TryGetProperty("assignee", out var assigneeElement) && assigneeElement.ValueKind != System.Text.Json.JsonValueKind.Null
-                        ? assigneeElement.GetProperty("displayName").GetString() ?? "Unassigned"
-                        : "Unassigned";
-
-                    var jiraTicketUrl = $"{jiraBaseUrl}/browse/{ticketId}";
-                    var ticketInfo = $@"
-                    📋 **Jira Ticket: {ticketId}**
-                    🔗 {jiraTicketUrl}
-                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    **Summary:** {summary}
-                    **Status:** {status}
-                    **Priority:** {priority}
-                    **Assignee:** {assignee}
-                    **Description:**{description}
-                    **Root Cause Analysis (RCA):**{rca}
-                    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-                    ";
-
-                    return ticketInfo;
-                }
-            }
-            catch (Exception ex)
-            {
-                return null;
-            }
-        }
-
-        // Helper method to extract text from ADF format
-        private string ExtractTextFromADF(JsonElement element)
-        {
-            try
-            {
-                var textParts = new List<string>();
-
-                // Handle different JSON structures
-                if (element.ValueKind == System.Text.Json.JsonValueKind.String)
-                {
-                    // Simple string value
-                    var plainText = element.GetString();
-                    if (!string.IsNullOrWhiteSpace(plainText))
-                    {
-                        return plainText;
-                    }
-                }
-                else if (element.ValueKind == System.Text.Json.JsonValueKind.Object)
-                {
-                    // Try to extract from ADF object format
-                    if (element.TryGetProperty("content", out var contentArray) &&
-                        contentArray.ValueKind == System.Text.Json.JsonValueKind.Array)
-                    {
-                        // First level: iterate through array
-                        foreach (var item in contentArray.EnumerateArray())
-                        {
-                            // Try to get text directly
-                            if (item.TryGetProperty("text", out var directText))
-                            {
-                                var text = directText.GetString();
-                                if (!string.IsNullOrWhiteSpace(text))
-                                    textParts.Add(text);
-                            }
-
-                            // Try nested content structure
-                            if (item.TryGetProperty("content", out var nestedContent) &&
-                                nestedContent.ValueKind == System.Text.Json.JsonValueKind.Array)
-                            {
-                                foreach (var nestedItem in nestedContent.EnumerateArray())
-                                {
-                                    if (nestedItem.TryGetProperty("text", out var nestedText))
-                                    {
-                                        var text = nestedText.GetString();
-                                        if (!string.IsNullOrWhiteSpace(text))
-                                            textParts.Add(text);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // Try direct "text" property
-                    else if (element.TryGetProperty("text", out var directTextProp))
-                    {
-                        var text = directTextProp.GetString();
-                        if (!string.IsNullOrWhiteSpace(text))
-                            return text;
-                    }
-                    // Last resort: stringify the whole object
-                    else
-                    {
-                        var rawJson = element.GetRawText();
-                        if (!string.IsNullOrWhiteSpace(rawJson) && rawJson.Length < 1000)
-                        {
-                            return rawJson;
-                        }
-                    }
-                }
-
-                if (textParts.Count > 0)
-                {
-                    return string.Join(" ", textParts);
-                }
-            }
-            catch (Exception ex)
-            {
-            }
-
-            return "empty";
-        }
-
-        // AI-based intent detection for opening znode sphere
-        private async Task<bool> IsOpenSphereIntentAI(string question)
-        {
-            try
-            {
-                var prompt = $@"
-                Classify the user query intent.
-
-                Return ONLY one word:
-                OPENSPHERE or OTHER
-
-                OPENSPHERE includes:
-                - open znode sphere
-                - run sphere
-                - launch znode-sphere-tool
-                - start sphere
-                - any intent to open or run znode sphere tool
-                - only quick check this don't take much time for this
-
-                Everything else is OTHER.
-
-                Query:
-                {question}
-                ";
-
-                var req = new
-                {
-                    model = "phi3",
-                    prompt = prompt,
-                    stream = false
-                };
-
-                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-                var res = await http.PostAsync(
-                    "http://localhost:11434/api/generate",
-                    new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
-                    _currentCts.Token
-                );
-
-                var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
-
-                var output = json.RootElement.GetProperty("response")
-                    .GetString()?.Trim().ToUpper();
-
-                return output == "OPENSPHERE";
-            }
-            catch
-            {
-                return false;
-            }
-        }
+        private static readonly string JiraConfigPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "AmlaDeveloperAssistant",
+            "jira_config.json"
+        );
+        private IntentDetectionService _intentDetectionService;
         private readonly string repoVectorPath;
         private readonly string kbVectorPath;
         private readonly string iconPath;
@@ -547,15 +108,23 @@ Response:";
                 _chatHistory = JsonSerializer.Deserialize<List<ChatMessage>>(json) ?? new();
             }
 
-            // Initialize Jira services
+            // Initialize services
             try
             {
-                _jiraService = new JiraService(JiraBaseUrl, JiraUsername, JiraAuthToken);
+                _jiraService = new JiraService(Constants.JiraBaseUrl, Constants.JiraUsername, Constants.JiraAuthToken);
                 _fixSuggestionService = new FixSuggestionService();
+                _aiService = new AssistantAiService(
+                    repoVectorPath,
+                    kbVectorPath,
+                    chatHistoryPath,
+                    GetEmbedding,
+                    CosineSimilarity
+                );
+                _intentDetectionService = new IntentDetectionService(GetEmbedding, CosineSimilarity);
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"Failed to initialize Jira service: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Failed to initialize services: {ex.Message}");
             }
 
             // position bottom right
@@ -564,13 +133,42 @@ Response:";
             Top = area.Height - Height - 10;
 
             // fire and forget (non-blocking)
-            var bubble = AddAiMessage("🔄 Initializing AI...");
+            var bubble = AddAiMessage(Constants.LoadingTicket); // Reuse LoadingTicket for initialization
             var textBlock = (System.Windows.Controls.RichTextBox)bubble.Child;
 
 
             WarmUpModels(textBlock);
 
         }
+
+        // Load configuration from appsettings.json
+        private void LoadJiraConfig()
+        {
+            try
+            {
+                var configPath = System.IO.Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory,
+                    "Config",
+                    "appsettings.json"
+                );
+
+                if (System.IO.File.Exists(configPath))
+                {
+                    var json = System.IO.File.ReadAllText(configPath);
+                    using var doc = JsonDocument.Parse(json);
+
+                    var jiraSettings = doc.RootElement.GetProperty("JiraSettings");
+                    jiraBaseUrl = jiraSettings.GetProperty("BaseUrl").GetString() ?? "https://amla.atlassian.net";
+                    jiraEmail = jiraSettings.GetProperty("Email").GetString() ?? "";
+                    jiraToken = jiraSettings.GetProperty("ApiToken").GetString() ?? "";
+
+                }
+            }
+            catch (Exception ex)
+            {
+            }
+        }
+
         private async Task WarmUpModels(System.Windows.Controls.RichTextBox? uiText = null)
         {
             SendButton.IsEnabled = false;
@@ -581,7 +179,7 @@ Response:";
             {
                 System.Windows.Application.Current.Dispatcher.Invoke(() =>
                 {
-                    SetUIMessage(uiText, "🔄 Warming up AI models...\nThis may take a moment, but it ensures faster responses later on.\n");
+                    SetUIMessage(uiText, Constants.AnalyzingTicket); // Reuse AnalyzingTicket for warmup
                 });
             }
             try
@@ -602,7 +200,7 @@ Response:";
                 {
                     try
                     {
-                        UpdateUI(uiText, $"\n⏳ Loading model: {model}...");
+                        UpdateUI(uiText, $"\n{Constants.LoadingTicket} {model}...");
 
                         var req = new
                         {
@@ -628,7 +226,7 @@ Response:";
                 {
                     try
                     {
-                        UpdateUI(uiText, $"\n⏳ Loading embedding model: {model}...");
+                        UpdateUI(uiText, $"\n{Constants.LoadingTicket} {model}...");
 
                         var req = new
                         {
@@ -654,7 +252,7 @@ Response:";
             }
             catch (Exception ex)
             {
-                UpdateUI(uiText, "\n⚠️ Warm-up error: " + ex.Message);
+                UpdateUI(uiText, Constants.Error + ex.Message);
             }
             finally
             {
@@ -692,12 +290,7 @@ Response:";
         }
 
 
-        class VectorChunk
-        {
-            public string Source { get; set; }
-            public string Content { get; set; }
-            public float[] Embedding { get; set; }
-        }
+
 
         private void QuestionBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
         {
@@ -855,56 +448,28 @@ Response:";
             {
                 AddUserMessage(question);
 
-                // Check if this is a Jira ticket key
-                HandleJiraTicketInput(question);
-
                 QuestionBox.Text = "";
 
                 // Only add the thinking bubble if we're proceeding with normal AI processing
-                var aiBubble = AddAiMessage("Thinking...💭 ");
+                var aiBubble = AddAiMessage(Constants.Thinking);
 
+                var questionVector = await _aiService.GetEmbedding(question);
                 try
                 {
-                    // Check for Jira ticket intent FIRST (before adding AI bubble)
-                    var ticketId = ExtractJiraTicketId(question);
-
-                    if (ticketId != null)
+                    // Check if this is a Jira ticket key
+                    if(await HandleJiraTicketInput(question, questionVector))
                     {
-                        var isJiraIntent = await IsOpenJiraIntentAI(question);
-
-                        if (isJiraIntent)
-                        {
-                            OpenJiraTicket(ticketId);
-
-                            // If token is not configured, just show browser message
-                            if (string.IsNullOrWhiteSpace(jiraToken))
-                            {
-                                var jiraUrl = $"{jiraBaseUrl}/browse/{ticketId}";
-                                AddAiMessage($"🔗 Opened Jira ticket in browser: {ticketId}");
-                                return;
-                            }
-
-                            // Fetch and display ticket description
-                            var ticketDescription = await GetJiraTicketDescription(ticketId);
-                            if (ticketDescription != null)
-                            {
-                                AddAiMessage(ticketDescription);
-                            }
-                            else
-                            {
-                                AddAiMessage($"🔗 Opened Jira ticket: {ticketId}");
-                            }
-                            return;
-                        }
+                        return;
                     }
+
                 }
                 catch (Exception ex)
                 {
-                    AddAiMessage("⚠️ Jira intent detection error: " + ex.Message);
+                    AddAiMessage(Constants.JiraIntentError + ex.Message);
                 }
 
                 // Check for open sphere intent using AI
-                if (await IsOpenSphereIntentAI(question))
+                if (await _intentDetectionService.IsOpenSphereIntentVectorSearch(questionVector))
                 {
                     // Launch znode-sphere-tool in a new command prompt
                     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -921,20 +486,20 @@ Response:";
                 // fallback to AI if uncertain
                 if (!isSimple && question.Length < 25)
                 {
-                    isSimple = await IsSimpleQueryAI(question);
+                    isSimple = await _intentDetectionService.IsSimpleQueryVectorSearch(questionVector);
                 }
                 string context = "";
                 if (!isSimple)
                 {
-                    context = await SearchVectors(question);
+                    context = await _aiService.SearchVectors(question, questionVector);
                 }
                 var textBlock = (System.Windows.Controls.RichTextBox)aiBubble.Child;
-                SetUIMessage(textBlock, "⚡ Thinking deeper...🧠\n"); // clear "Thinking..."
-                await CallOllamaStreaming(question, context, isSimple, textBlock);
+                SetUIMessage(textBlock, Constants.ThinkingDeeper); // clear "Thinking..."
+                await CallOllamaChatStreaming(question, context, isSimple, textBlock);
             }
             catch (Exception ex)
             {
-                AddAiMessage("⚠️ Error: " + ex.Message);
+                AddAiMessage(Constants.Error + ex.Message);
             }
             finally
             {
@@ -1022,53 +587,9 @@ Response:";
             return false;
         }
 
-        private async Task<bool> IsSimpleQueryAI(string question)
-        {
-            try
-            {
-                var prompt = $@"
-                Classify the user query.
 
-                Return ONLY one word:
-                GREETING or OTHER
 
-                GREETING includes:
-                - hi, hello, hey
-                - thanks, thank you
-                - casual talk
 
-                Everything else is OTHER.
-
-                Query:
-                {question}
-                ";
-
-                var req = new
-                {
-                    model = "phi3",
-                    prompt = prompt,
-                    stream = false
-                };
-
-                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-                var res = await http.PostAsync(
-                    "http://localhost:11434/api/generate",
-                    new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
-                    _currentCts.Token
-                );
-
-                var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
-
-                var output = json.RootElement.GetProperty("response")
-                    .GetString()?.Trim().ToUpper();
-
-                return output == "GREETING";
-            }
-            catch (Exception ex)
-            {
-                return false;
-            }
-        }
 
         // BROWSE PROJECT FOLDER
         private void BrowseRepoPath(object sender, RoutedEventArgs e)
@@ -1087,7 +608,7 @@ Response:";
         {
             if (!Directory.Exists(projectRoot))
             {
-                AddAiMessage("Project directory not found.");
+                AddAiMessage(Constants.ProjectDirectoryNotFound);
                 return;
             }
 
@@ -1103,7 +624,7 @@ Response:";
                 JsonSerializer.Serialize(vectors)
             );
 
-            SetUIMessage(textBlock, $"Project index built. Chunks: {vectors.Count}");
+            SetUIMessage(textBlock, string.Format(Constants.ProjectIndexBuilt, vectors.Count));
         }
 
         // REFRESH KB INDEX
@@ -1120,298 +641,26 @@ Response:";
                 JsonSerializer.Serialize(vectors)
             );
 
-            SetUIMessage(textBlock, $"KB index built. Chunks: {vectors.Count}");
+            SetUIMessage(textBlock, string.Format(Constants.KBIndexBuilt, vectors.Count));
         }
 
-        // INDEX REPOSITORY
-        private async Task<List<VectorChunk>> IndexRepository(System.Windows.Controls.RichTextBox? uiText = null)
+        // INDEX REPOSITORY (delegated to service)
+        private async Task<List<AssistantAiService.VectorChunk>> IndexRepository(System.Windows.Controls.RichTextBox? uiText = null)
         {
-            var result = new List<VectorChunk>();
-
-            var excludedDirs = new[]
-            {
-                "\\bin\\", "\\obj\\", "\\.git\\", "\\node_modules\\",
-                "\\dist\\", "\\build\\", "\\.vs\\"
-            };
-
-            var allowedExtensions = new[]
-            {
-                ".cs", ".ts", ".tsx", ".py", ".json", ".sql", ".cshtml", ".xaml", ".config"
-            };
-
-            var files = Directory.GetFiles(projectRoot, "*.*", SearchOption.AllDirectories)
-                .Where(f =>
-                    allowedExtensions.Any(ext => f.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) &&
-                    !excludedDirs.Any(dir => f.Contains(dir, StringComparison.OrdinalIgnoreCase))
-                );
-            var semaphore = new SemaphoreSlim(4); // 🔥 limit parallelism
-
-            int remainingFilesCount = files.Count();
-            var tasks = files.Select(async file =>
-            {
-                await semaphore.WaitAsync();
-
-                try
-                {
-                    remainingFilesCount--;
-                    if (file.Contains(".min.") || file.EndsWith(".bundle.js"))
-                    {
-                        return;
-                    }
-
-                    var text = await File.ReadAllTextAsync(file);
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        return;
-                    }
-
-                    var fileHeader = $@"
-                        File: {Path.GetFileName(file)}
-                        Path: {file}
-
-                        ----------------
-                        ";
-
-                    var chunks = ChunkText(fileHeader + text);
-
-                    foreach (var chunk in chunks)
-                    {
-                        var enriched = chunk.ToLower();
-
-                        // boost keywords (helps embeddings)
-                        if (file.EndsWith(".cs"))
-                            enriched = "csharp code " + enriched;
-
-                        if (file.Contains("controller", StringComparison.OrdinalIgnoreCase))
-                            enriched = "api controller " + enriched;
-
-                        if (file.Contains("service", StringComparison.OrdinalIgnoreCase))
-                            enriched = "business logic " + enriched;
-
-                        var embedding = await GetEmbedding(enriched);
-
-                        result.Add(new VectorChunk
-                        {
-                            Source = file,
-                            Content = chunk,
-                            Embedding = embedding
-                        });
-
-                        if (uiText != null)
-                        {
-                            System.Windows.Application.Current.Dispatcher.Invoke((Delegate)(() =>
-                            {
-                                var totalFiles = files.Count();
-                                var processedFiles = totalFiles - remainingFilesCount;
-                                var percent = (int)((processedFiles * 100.0) / totalFiles);
-                                SetUIMessage(uiText,
-                                    $"📂 Files: {processedFiles}/{totalFiles} ({percent}%)\n" +
-                                    $"🧩 Chunks: {result.Count} processed\n" +
-                                    $"⚙️ Processing: \n\n{file}");
-                            }));
-                        }
-                    }
-                }
-                catch { }
-                finally
-                {
-                    semaphore.Release();
-                }
-            });
-
-            await Task.WhenAll(tasks);
-
-
-            return result;
+            // Call the service for indexing logic
+            return await _aiService.IndexRepository(projectRoot, uiText, msg => SetUIMessage(uiText, msg));
         }
 
-        // INDEX KNOWLEDGE BASE WEBSITE
-        private async Task<List<VectorChunk>> IndexKnowledgeBase(System.Windows.Controls.RichTextBox? uiText = null)
+        // INDEX KNOWLEDGE BASE WEBSITE (delegated to service)
+        private async Task<List<AssistantAiService.VectorChunk>> IndexKnowledgeBase(System.Windows.Controls.RichTextBox? uiText = null)
         {
-            var result = new List<VectorChunk>();
-
-            string startUrl = "https://support.znode.com/support/solutions";
-
-            var visited = new HashSet<string>();
-            var queue = new Queue<string>();
-
-            var lockObj = new object();
-
-            queue.Enqueue(startUrl);
-
-            int workerCount = 4;
-            var tasks = new List<Task>();
-
-            for (int i = 0; i < workerCount; i++)
-            {
-                tasks.Add(Task.Run(async () =>
-                {
-                    while (true)
-                    {
-                        string? url = null;
-
-                        lock (lockObj)
-                        {
-                            if (queue.Count > 0)
-                            {
-                                url = queue.Dequeue();
-                            }
-                        }
-
-                        if (url == null)
-                        {
-                            await Task.Delay(200); // wait for new items
-
-                            lock (lockObj)
-                            {
-                                if (queue.Count == 0)
-                                    return; // exit worker safely
-                            }
-
-                            continue;
-                        }
-
-                        try
-                        {
-                            lock (lockObj)
-                            {
-                                if (visited.Contains(url))
-                                    continue;
-
-                                visited.Add(url);
-                            }
-
-                            var html = await http.GetStringAsync(url);
-
-                            var doc = new HtmlDocument();
-                            doc.LoadHtml(html);
-
-                            var junkNodes = doc.DocumentNode.SelectNodes(
-                                "//script|//style|//nav|//header|//footer|//aside"
-                            );
-
-                            if (junkNodes != null)
-                            {
-                                foreach (var node in junkNodes)
-                                    node.Remove();
-                            }
-
-                            var body = doc.DocumentNode.SelectSingleNode("//body");
-
-                            var text = body?.InnerText ?? "";
-
-                            // CLEAN TEXT
-                            text = Regex.Replace(text, @"Home.*?Search", "", RegexOptions.IgnoreCase);
-                            text = Regex.Replace(text, @"TABLE OF CONTENTS.*?Introduction", "", RegexOptions.IgnoreCase);
-                            text = Regex.Replace(text, @"Sign In|Sign Up|Toggle navigation", "", RegexOptions.IgnoreCase);
-                            text = Regex.Replace(text, @"\s+", " ").Trim();
-                            text = text.Replace("Sign in", "")
-                                       .Replace("Submit a ticket", "")
-                                       .Replace("Toggle navigation", "")
-                                       .Trim();
-
-
-                            var chunks = ChunkText(text);
-
-                            var embedTasks = chunks.Select(async chunk =>
-                            {
-                                var embedding = await GetEmbedding(chunk);
-
-                                lock (result)
-                                {
-                                    result.Add(new VectorChunk
-                                    {
-                                        Source = url,
-                                        Content = chunk,
-                                        Embedding = embedding
-                                    });
-
-                                    if (uiText != null)
-                                    {
-                                        System.Windows.Application.Current.Dispatcher.Invoke(() =>
-                                        {
-                                            SetUIMessage(uiText, " chunks processed : " + result.Count + "\n source : " + url);
-                                        });
-                                    }
-                                }
-                            });
-
-                            await Task.WhenAll(embedTasks);
-
-                            var links = doc.DocumentNode.SelectNodes("//a[@href]");
-
-                            if (links != null)
-                            {
-                                foreach (var link in links)
-                                {
-                                    var href = link.GetAttributeValue("href", "");
-                                    if (string.IsNullOrWhiteSpace(href)) continue;
-
-                                    if (href.StartsWith("/support"))
-                                    {
-                                        var full = "https://support.znode.com" + href;
-
-                                        lock (lockObj)
-                                        {
-                                            if (!visited.Contains(full))
-                                            {
-                                                queue.Enqueue(full);
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        catch { }
-                    }
-                }));
-            }
-
-            await Task.WhenAll(tasks);
-
-            return result;
+            // Call the service for indexing logic
+            return await _aiService.IndexKnowledgeBase(uiText, msg => SetUIMessage(uiText, msg));
         }
 
         // CHUNK TEXT
-        private List<string> ChunkText(string text, int size = 1200)
-        {
-            var chunks = new List<string>();
 
-            if (string.IsNullOrWhiteSpace(text))
-                return chunks;
-
-            var sentences = text.Split(new[] { '.', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-
-            var current = new StringBuilder();
-
-            foreach (var s in sentences)
-            {
-                var sentence = s.Trim();
-
-                if (string.IsNullOrWhiteSpace(sentence))
-                    continue;
-
-                // 🔥 DO NOT SKIP SHORT SENTENCES
-                // Instead, merge them into context
-
-                if (current.Length + sentence.Length > size)
-                {
-                    if (current.Length > 0)
-                    {
-                        chunks.Add(current.ToString());
-                        current.Clear();
-                    }
-                }
-
-                current.Append(sentence + ". ");
-            }
-
-            if (current.Length > 0)
-                chunks.Add(current.ToString());
-
-            return chunks;
-        }
-
+         
         // GET EMBEDDING
         private async Task<float[]> GetEmbedding(string text)
         {
@@ -1438,97 +687,16 @@ Response:";
                 .ToArray();
         }
 
+
         // VECTOR SEARCH
-        private async Task<string> SearchVectors(string question)
-        {
-            var allChunks = new List<VectorChunk>();
-            var allHistoryChunks = new List<VectorChunk>();
 
-            if (File.Exists(repoVectorPath))
-            {
-                var repoJson = await File.ReadAllTextAsync(repoVectorPath);
-                var repo = JsonSerializer.Deserialize<List<VectorChunk>>(repoJson);
-                if (repo != null) allChunks.AddRange(repo);
-            }
+        // VECTOR SEARCH
 
-            if (File.Exists(kbVectorPath))
-            {
-                var kbJson = await File.ReadAllTextAsync(kbVectorPath);
-                var kb = JsonSerializer.Deserialize<List<VectorChunk>>(kbJson);
-                if (kb != null) allChunks.AddRange(kb);
-            }
+        // VECTOR SEARCH
 
-            var queryVec = await GetEmbedding(question);
 
-            if (File.Exists(chatHistoryPath))
-            {
-                var historyJson = await File.ReadAllTextAsync(chatHistoryPath);
-                var history = JsonSerializer.Deserialize<List<ChatMessage>>(historyJson);
-                if (history != null)
-                {
-                    foreach (var chunk in history.TakeLast(20)) // take last 20 messages for relevance
-                    {
-                        var enriched = $"History:{chunk.Role.ToLower()} said, {chunk.Content}";
+        // VECTOR SEARCH
 
-                        var embedding = await GetEmbedding(enriched);
-
-                        allHistoryChunks.Add(new VectorChunk
-                        {
-                            Source = chunk.Role,
-                            Content = enriched,
-                            Embedding = embedding
-                        });
-                    }
-                    allChunks.AddRange(allHistoryChunks
-                            .Select(v => new
-                            {
-                                v.Content,
-                                v.Source,
-                                Score = CosineSimilarity(queryVec, v.Embedding),
-                                v.Embedding
-                            })
-                            .Where(x => x.Score > 0.60)
-                            .OrderByDescending(x => x.Score)
-                            .Take(10)
-                            .ToList().Select(o => new VectorChunk
-                            {
-                                Source = o.Source,
-                                Content = o.Content,
-                                Embedding = o.Embedding
-                            }));
-                }
-            }
-
-            var ranked = allChunks
-                .Select(v => new
-                {
-                    v.Content,
-                    v.Source,
-                    Score = CosineSimilarity(queryVec, v.Embedding)
-                })
-                .Where(x => x.Score > 0.60)
-                .OrderByDescending(x => x.Score)
-                .Take(10)
-                .ToList();
-            if (!ranked.Any())
-            {
-                return "";
-            }
-            var context = new StringBuilder();
-
-            foreach (var r in ranked)
-            {
-                context.AppendLine("----");
-                context.AppendLine(r.Content);
-            }
-
-            var final = context.ToString();
-
-            if (final.Length > 3000)
-                final = final.Substring(0, 3000);
-
-            return final;
-        }
 
         // COSINE SIMILARITY
         private double CosineSimilarity(float[] a, float[] b)
@@ -1548,6 +716,8 @@ Response:";
 
             return dot / (Math.Sqrt(magA) * Math.Sqrt(magB) + 1e-8);
         }
+
+
 
         // CALL OLLAMA
         private async Task<string> CallOllamaStreaming(string question, string context, bool isSimple, System.Windows.Controls.RichTextBox? uiText = null)
@@ -1660,7 +830,7 @@ Response:";
                 {
                     System.Windows.Application.Current.Dispatcher.Invoke(() =>
                     {
-                        SetUIMessage(uiText, string.Empty); // ✅ show model being used
+                SetUIMessage(uiText, string.Empty); // show model being used
                     });
                 }
                 using var stream = await response.Content.ReadAsStreamAsync();
@@ -1719,7 +889,7 @@ Response:";
                 var finalText = result.ToString();
                 if (string.IsNullOrWhiteSpace(finalText))
                 {
-                    finalText = "⚠️ No answer generated. Try refining your question.";
+                    finalText = Constants.NoAnswerGenerated;
                 }
                 if (uiText != null)
                 {
@@ -1744,7 +914,7 @@ Response:";
                 {
                     System.Windows.Application.Current.Dispatcher.Invoke(() =>
                     {
-                        SetUIMessage(uiText, "⚠️ Request timed out. Try again or refine your question.");
+                        SetUIMessage(uiText, Constants.RequestTimedOut);
                     });
                 }
             }
@@ -1755,65 +925,263 @@ Response:";
             return string.Empty;
         }
 
+        private async Task<string> CallOllamaChatStreaming(
+            string question,
+            string context,
+            bool isSimple,
+            System.Windows.Controls.RichTextBox? uiText = null)
+        {
+            _isResponseGenerating = true;
+
+            string modelToUse = "phi3";
+            bool hasContext = !string.IsNullOrWhiteSpace(context);
+
+            try
+            {
+                // 🧠 Decide model
+                if (!isSimple && hasContext && context.Length > 400)
+                    modelToUse = "deepseek-coder:6.7b";
+
+                // 🧠 Build messages
+                var messages = new List<object>();
+
+                // 🔥 SYSTEM MESSAGE
+                if (isSimple || !hasContext)
+                {
+                    messages.Add(new
+                    {
+                        role = "system",
+                        content = "You are a friendly assistant. Keep answers short and natural."
+                    });
+                }
+                else
+                {
+                    messages.Add(new
+                    {
+                        role = "system",
+                        content = @"Answer ONLY using the provided context.
+Znode is an ecommerce platform.
+If answer is not found, say: I don't know."
+                    });
+                }
+
+                // 🔥 Add limited history (IMPORTANT)
+                foreach (var msg in _chatHistory.TakeLast(6))
+                {
+                    messages.Add(new
+                    {
+                        role = msg.Role,
+                        content = msg.Content
+                    });
+                }
+
+                // 🔥 Current question
+                if (hasContext && !isSimple)
+                {
+                    messages.Add(new
+                    {
+                        role = "user",
+                        content = $"Context:\n{context}\n\nQuestion:\n{question}"
+                    });
+                }
+                else
+                {
+                    messages.Add(new
+                    {
+                        role = "user",
+                        content = question
+                    });
+                }
+
+                var requestBody = new
+                {
+                    model = modelToUse,
+                    messages = messages,
+                    stream = true,
+                    options = new
+                    {
+                        temperature = 0.2,
+                        num_predict = 300
+                    }
+                };
+
+                var request = new HttpRequestMessage(HttpMethod.Post, "http://localhost:11434/api/chat")
+                {
+                    Content = new StringContent(
+                        JsonSerializer.Serialize(requestBody),
+                        Encoding.UTF8,
+                        "application/json")
+                };
+
+                // 🧾 Save user message
+                _chatHistory.Add(new ChatMessage
+                {
+                    Role = "user",
+                    Content = question
+                });
+
+                _currentCts = new CancellationTokenSource(TimeSpan.FromMinutes(30));
+
+                var response = await http.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    _currentCts.Token
+                );
+
+                if (uiText != null)
+                {
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        SetUIMessage(uiText, string.Empty);
+                    });
+                }
+
+                using var stream = await response.Content.ReadAsStreamAsync();
+                using var reader = new StreamReader(stream);
+
+                var result = new StringBuilder();
+                int counter = 0;
+
+                SetUiEnabled(false, "📝 Generating...");
+
+                while (!reader.EndOfStream)
+                {
+                    var line = await reader.ReadLineAsync();
+
+                    if (string.IsNullOrWhiteSpace(line))
+                        continue;
+
+                    try
+                    {
+                        var json = JsonDocument.Parse(line);
+
+                        // 🔥 NEW PARSING FOR /api/chat
+                        if (json.RootElement.TryGetProperty("message", out var msgObj) &&
+                            msgObj.TryGetProperty("content", out var content))
+                        {
+                            var token = content.GetString();
+
+                            if (string.IsNullOrEmpty(token))
+                                continue;
+
+                            result.Append(token);
+                            counter++;
+
+                            // 🔥 Streaming UI (throttled)
+                            if (uiText != null && counter % 2 == 0)
+                            {
+                                if (_isResponseGenerating)
+                                {
+                                    var snapshot = result.ToString();
+
+                                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                                    {
+                                        SetUIMessage(uiText, snapshot);
+                                    }, System.Windows.Threading.DispatcherPriority.Background);
+                                }
+                                else
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // ignore malformed chunk
+                    }
+                }
+
+                var finalText = result.ToString();
+
+                if (string.IsNullOrWhiteSpace(finalText))
+                    finalText = Constants.NoAnswerGenerated;
+
+                if (uiText != null)
+                {
+                    await System.Windows.Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        SetUIMessage(uiText, finalText);
+                    });
+                }
+
+                // 🧾 Save assistant response
+                _chatHistory.Add(new ChatMessage
+                {
+                    Role = "assistant",
+                    Content = finalText
+                });
+
+                SaveChatHistory();
+            }
+            catch (OperationCanceledException)
+            {
+                if (uiText != null)
+                {
+                    System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        SetUIMessage(uiText, Constants.RequestTimedOut);
+                    });
+                }
+            }
+            finally
+            {
+                _isResponseGenerating = false;
+            }
+
+            return string.Empty;
+        }
+
         protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
         {
             e.Cancel = true;   // ❌ prevent close
             this.Hide();       // 👈 hide instead
         }
 
-        // IMPROVED: Handle Jira ticket input with AI intent detection
-        private async void HandleJiraTicketInput(string input)
+
+        // Use JiraService for all JIRA ticket handling and UI integration
+        private async Task<bool> HandleJiraTicketInput(string input, float[] questionVector)
         {
             if (_jiraService == null)
+                return false;
+
+            // Fast path: regex match for common Jira ticket patterns (e.g., PROJ-123)
+            if (_intentDetectionService.IsJiraTicketIntentRegx(input))
             {
-                return; // Silently return, let normal processing continue
+                await ShowJiraTicketUI(input.ToUpper().Trim());
+                return true;
             }
 
-            // First, try regex pattern match (fast path)
-            var ticketKeyPattern = @"^[A-Z][A-Z0-9]+-\d+$";
-            if (Regex.IsMatch(input.ToUpper().Trim(), ticketKeyPattern))
-            {
-                // Direct ticket key provided
-                await FetchAndDisplayTicket(input.ToUpper().Trim());
-                return;
-            }
-
-            // Second, use AI to detect if this is a Jira-related query
-            var isJiraIntent = await IsJiraTicketIntentAI(input);
+            // AI intent detection
+            var isJiraIntent = await _intentDetectionService.IsJiraTicketIntentVectorSearch(questionVector);
             if (!isJiraIntent)
-            {
-                return; // Not a Jira query, let normal processing continue
-            }
+                return false;
 
-            // Third, extract ticket ID from the query using AI
-            var extractedTicketId = await ExtractJiraTicketIdAI(input);
+            var extractedTicketId = await _aiService.ExtractJiraTicketIdAI(input);
             if (!string.IsNullOrEmpty(extractedTicketId))
             {
-                await FetchAndDisplayTicket(extractedTicketId);
+                await ShowJiraTicketUI(extractedTicketId);
+                return true;
             }
             else
             {
-                // AI detected Jira intent but couldn't extract ticket ID
                 AddAiMessage("❌ I detected a Jira request, but couldn't extract a valid ticket ID.\n\nTry:\n• 'Show PROJ-123'\n• 'Open BUG-456'\n• 'Get FEAT-789'");
+                return false;
             }
         }
 
-        // NEW: Helper method to fetch and display ticket
-        private async Task FetchAndDisplayTicket(string ticketKey)
+
+        // Show Jira ticket in UI using JiraService
+        private async Task ShowJiraTicketUI(string ticketKey)
         {
             try
             {
                 AddAiMessage($"🎫 Fetching Jira ticket: {ticketKey}");
                 var bubble = AddAiMessage("⏳ Loading ticket...");
                 var textBlock = (System.Windows.Controls.RichTextBox)bubble.Child;
-
                 var ticket = await _jiraService.GetTicketAsync(ticketKey);
-
-                // Display ticket information
-                DisplayTicketWithLink(textBlock, ticket);
-
-                // Add "Get Fix Suggestions" button
-                AddFixSuggestionButton(ticket);
+                DisplayJiraTicketWithLink(textBlock, ticket);
+                AddJiraFixSuggestionButton(ticket);
             }
             catch (Exception ex)
             {
@@ -1821,39 +1189,31 @@ Response:";
             }
         }
 
-        // NEW: Display ticket with clickable link
-        private void DisplayTicketWithLink(System.Windows.Controls.RichTextBox rtb, JiraTicket ticket)
+        // Display Jira ticket with clickable link
+        private void DisplayJiraTicketWithLink(System.Windows.Controls.RichTextBox rtb, JiraTicket ticket)
         {
             rtb.Document.Blocks.Clear();
-
             var paragraph = new Paragraph();
-
             paragraph.Inlines.Add(new Run($"🎫 JIRA TICKET: {ticket.Key}\n\n"));
             paragraph.Inlines.Add(new Run($"📋 Summary: {ticket.Summary}\n"));
-
             var link = new Hyperlink(new Run("🔗 Open in Browser"))
             {
                 NavigateUri = new Uri(ticket.BrowserUrl)
             };
             link.RequestNavigate += (s, e) =>
             {
-                System.Diagnostics.Process.Start(
-                    new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri)
-                    { UseShellExecute = true }
-                );
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
             };
             paragraph.Inlines.Add(link);
-
             paragraph.Inlines.Add(new Run($"\n📊 Status: {ticket.Status}"));
             paragraph.Inlines.Add(new Run($"\n⚡ Priority: {ticket.Priority}"));
             paragraph.Inlines.Add(new Run($"\n🏷️ Type: {ticket.IssueType}\n\n"));
             paragraph.Inlines.Add(new Run($"📝 Description:\n{ticket.Description}"));
-
             rtb.Document.Blocks.Add(paragraph);
         }
 
-        // NEW: Add fix suggestion button
-        private void AddFixSuggestionButton(JiraTicket ticket)
+        // Add fix suggestion button for Jira ticket
+        private void AddJiraFixSuggestionButton(JiraTicket ticket)
         {
             var button = new System.Windows.Controls.Button
             {
@@ -1865,12 +1225,48 @@ Response:";
                 FontSize = 12,
                 Cursor = System.Windows.Input.Cursors.Hand
             };
-
             button.Click += async (s, e) =>
             {
-                await GetFixSuggestionsForTicket(ticket);
-            };
+                _isProcessing = true;
+                SetUiEnabled(false);
+                try
+                {
+                    var bubble = AddAiMessage("🧠 Analyzing ticket with AI...\n⏳ This may take a moment...");
+                    var textBlock = (System.Windows.Controls.RichTextBox)bubble.Child;
+                    var suggestion = await _fixSuggestionService.GetFixSuggestionsForTicket(ticket, _aiService, projectRoot);
+                    if (suggestion.IsSuccess)
+                    {
+                        string formatedSuggestion = _fixSuggestionService.FormatFixSuggestion(suggestion);
+                        SetUIMessage(textBlock, formatedSuggestion);
 
+                        // 🧾 Save assistant response
+                        _chatHistory.Add(new ChatMessage
+                        {
+                            Role = "user",
+                            Content = $"How to fix Jira ticket {ticket.Key} : {ticket.Summary} ?"
+                        });
+                        _chatHistory.Add(new ChatMessage
+                        {
+                            Role = "assistant",
+                            Content = formatedSuggestion
+                        });
+                        SaveChatHistory();
+                    }
+                    else
+                    {
+                        SetUIMessage(textBlock, $"❌ {suggestion.Error}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AddAiMessage($"❌ Error getting suggestions: {ex.Message}");
+                }
+                finally
+                {
+                    _isProcessing = false;
+                    SetUiEnabled(true);
+                }
+            };
             var container = new Border
             {
                 Background = Brushes.Transparent,
@@ -1879,7 +1275,6 @@ Response:";
                 HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
                 Child = button
             };
-
             ChatPanel.Children.Add(container);
             ChatScroll.ScrollToEnd();
         }
@@ -1903,16 +1298,20 @@ Response:";
 
                 var projectContext = await BuildProjectContext();
 
-                string context = "";
+                string kbcontext = "";
+                string projcontext = "";
+                string historycontext = "";
                 try
                 {
-                    context = await SearchVectors(ticket.Description);
+                    kbcontext = await _aiService.SearchKBVectors(ticket.Description);
+                    projcontext = await _aiService.SearchRepoVectors(ticket.Description);
+                    //historycontext = await SearchHistoryVectors(ticket.Description, 500);
                 }
                 catch { }
                 var suggestion = await _fixSuggestionService.AnalyzeTicketAsync(
                     ticket.Key,
-                    $"context:{context}\n{ticket.Description}",
-                    projectContext
+                    $"{ticket.Description}\n INFORMATION CONTEXT:{kbcontext}\n",// HISTORY CONTEXT:{historycontext}\n",
+                    $"{projectContext}{projcontext}"
                 );
 
                 if (suggestion.IsSuccess)
@@ -2053,6 +1452,9 @@ Response:";
             }
         }
 
+        // Vector-based intent detection for Jira ticket input
+
+
         private void QuestionBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             var textBox = sender as System.Windows.Controls.TextBox;
@@ -2074,65 +1476,6 @@ Response:";
 
         }
 
-        // Extract Jira ticket ID from user query using AI
-        private async Task<string?> ExtractJiraTicketIdAI(string question)
-        {
-            try
-            {
-                var prompt = $@"
-                Extract the Jira ticket ID from the user query.
 
-                Return ONLY the ticket ID or NONE if not found.
-                Ticket ID format: PROJECT_KEY-NUMBER (e.g., PROJ-123, BUG-456)
-
-                Examples:
-                Query: 'show me PROJ-123'
-                Response: PROJ-123
-
-                Query: 'open ticket BUG-456'
-                Response: BUG-456
-
-                Query: 'what is FEAT-789 about'
-                Response: FEAT-789
-
-                Query: 'fix this bug'
-                Response: NONE
-
-                Query: '{question}'
-                Response:";
-
-                var req = new
-                {
-                    model = "phi3",
-                    prompt = prompt,
-                    stream = false
-                };
-
-                _currentCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-                var res = await http.PostAsync(
-                    "http://localhost:11434/api/generate",
-                    new StringContent(JsonSerializer.Serialize(req), Encoding.UTF8, "application/json"),
-                    _currentCts.Token
-                );
-
-                var json = JsonDocument.Parse(await res.Content.ReadAsStringAsync());
-
-                var output = json.RootElement.GetProperty("response")
-                    .GetString()?.Trim().ToUpper();
-
-                // Validate extracted ticket format
-                var ticketKeyPattern = @"^[A-Z][A-Z0-9]+-\d+$";
-                if (!string.IsNullOrEmpty(output) && output != "NONE" && Regex.IsMatch(output, ticketKeyPattern))
-                {
-                    return output;
-                }
-
-                return null;
-            }
-            catch
-            {
-                return null;
-            }
-        }
     }
 }

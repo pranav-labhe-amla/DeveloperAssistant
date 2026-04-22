@@ -10,6 +10,7 @@ namespace AmlaDeveloperAssistantApp
     {
         private NotifyIcon trayIcon;
         private MainWindow window;
+        private JiraSettingsWindow settings;
 
         private static Mutex _mutex;
 
@@ -42,6 +43,7 @@ namespace AmlaDeveloperAssistantApp
 
             var menu = new ContextMenuStrip();
             menu.Items.Add("Open Assistant", null, OnOpen);
+            menu.Items.Add("Settings", null, OnSettingsOpen);
             menu.Items.Add("Exit", null, OnExit);
 
             trayIcon.ContextMenuStrip = menu;
@@ -70,6 +72,31 @@ namespace AmlaDeveloperAssistantApp
                 window.Topmost = true;   // bring front
                 window.Topmost = false;  // reset
                 window.Focus();
+            }
+        }
+
+        private void OnSettingsOpen(object sender, EventArgs e)
+        {
+            if (settings == null || !settings.IsLoaded)
+            {
+                settings = new JiraSettingsWindow();
+
+                settings.Closed += (s, args) =>
+                {
+                    settings = null;
+                };
+
+                settings.Show();
+            }
+            else
+            {
+                if (settings.WindowState == WindowState.Minimized)
+                    settings.WindowState = WindowState.Normal;
+
+                settings.Activate();
+                settings.Topmost = true;   // bring front
+                settings.Topmost = false;  // reset
+                settings.Focus();
             }
         }
 
