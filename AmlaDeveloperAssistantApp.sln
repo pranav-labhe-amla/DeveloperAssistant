@@ -14,6 +14,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AmlaDeveloperAssistant.Serv
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AmlaDeveloperAssistant.WebApi", "AmlaDeveloperAssistant.WebApi\AmlaDeveloperAssistant.WebApi.csproj", "{3003FE09-8C3B-406A-8F54-749DFBC31B46}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AmlaDeveloperAssistant.McpInstaller", "AmlaDeveloperAssistant.McpInstaller\AmlaDeveloperAssistant.McpInstaller.csproj", "{03A6A365-64B7-46FD-9069-DE165BA13F4A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -60,6 +62,18 @@ Global
 		{3003FE09-8C3B-406A-8F54-749DFBC31B46}.Release|x64.Build.0 = Release|Any CPU
 		{3003FE09-8C3B-406A-8F54-749DFBC31B46}.Release|x86.ActiveCfg = Release|Any CPU
 		{3003FE09-8C3B-406A-8F54-749DFBC31B46}.Release|x86.Build.0 = Release|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Debug|x64.Build.0 = Debug|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Debug|x86.Build.0 = Debug|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Release|x64.ActiveCfg = Release|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Release|x64.Build.0 = Release|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Release|x86.ActiveCfg = Release|Any CPU
+		{03A6A365-64B7-46FD-9069-DE165BA13F4A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -70,6 +70,43 @@ namespace AmlaDeveloperAssistantApp.Services
             return suggestion;
         }
 
+        // Get fix suggestions prompt for a Git PR
+        public async Task<string> GetPRSuggestionsPromptForContext(string pullRequestContext, string pullRequest)
+        {
+            return $@"
+                You are a senior architect and code analysis assistant to analyse the pull request for a production issue.
+                Analyze the pull request, and provide clear, code-focused guidance on the pull request in easy english.
+
+                Pull request: {pullRequest}
+
+                PULL REQUEST CONTEXT:
+                {pullRequestContext}
+ 
+
+                ANALYSIS TASK:
+                Analyze the pull request and identify:
+                1. See if code changes follow best practices and coding standards
+                2. Identify any potential bugs, logic errors, or edge cases that may have been missed
+                3. See any breaking changes or potential risks
+                4. Suggest specific improvements or optimizations to the code
+                5. Any missing test cases or documentation updates needed
+                6. Any potential improvements or refactors that could be done
+                7. See for spelling or grammar mistakes in the description or code comments
+
+                RESPONSE FORMAT:
+                Please structure your response as follows:
+
+                IMPACTED_AREAS: [List affected modules/areas]
+                POTENTIAL_ISSUES: [List any potential bugs, logic errors, or edge cases]
+                BEST_PRACTICES: [List any best practices or coding standards that were not followed]
+                SUGGESTED_IMPROVEMENTS: [List specific improvements or optimizations to the code]
+                TESTING_RECOMMENDATIONS: [List any missing test cases or documentation updates needed]
+                POTENTIAL_RISKS: [List any breaking changes or potential risks]
+                LOOKS_GOOD: [If there are no issues and code follows best practices, say The pull request looks good with no major issues detected.]
+
+                ";
+        }
+
         // Display fix suggestions in formatted way
         public string FormatFixSuggestion(FixSuggestion suggestion)
         {

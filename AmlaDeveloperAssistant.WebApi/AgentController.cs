@@ -8,13 +8,59 @@ namespace AmlaDeveloperAssistant.WebApi
     [Route("api/agent")]
     public class AgentController : ControllerBase
     {
+        [HttpGet("setup")]
+        public async Task<IActionResult> Setup()
+        {
+            string requestComputerName = Request.Headers["X-Computername"];
+            string requestUsername = Request.Headers["X-Username"];
+
+            if (string.IsNullOrEmpty(requestComputerName) || string.IsNullOrEmpty(requestUsername))
+                return BadRequest(new { success = false, message = "Missing required headers: X-Computername and X-Username" });
+
+            string jiraToken = Request.Headers["X-Jira-Token"];
+            string gitToken = Request.Headers["X-Git-Token"];
+
+            if (string.IsNullOrEmpty(jiraToken) || string.IsNullOrEmpty(gitToken))
+                return BadRequest(new { success = false, message = "Missing required headers: X-Jira-Token and X-Git-Token" });
+
+            string authHeader = Request.Headers["Authorization"].ToString();
+            string authToken = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? authHeader["Bearer ".Length..].Trim()
+                : authHeader;
+
+            await TokenEncryptionService.SaveTokensAsync(requestComputerName, requestUsername, jiraToken, gitToken, authToken);
+
+            return Ok(new { success = true });
+        }
+
+
+        [HttpGet("isactive")]
+        public async Task<IActionResult> IsActive()
+        {
+            var userProfile = Environment.CurrentDirectory;
+            var repoVectorPath = Path.Combine(userProfile, "Vectors", "repo_vectors.json");
+            var kbVectorPath = Path.Combine(userProfile, "Vectors", "kb_vectors.json");
+            var chatHistoryPath = Path.Combine(userProfile, "Vectors", "chat_history.json");
+
+            string _requestComputerName = Request.Headers["X-Computername"];
+            string _requestUsername = Request.Headers["X-Username"];
+
+            // Load and decrypt tokens from the per-machine token file
+            (string _jiraToken, string _gitToken, string _authToken) = TokenEncryptionService
+                .LoadTokensAsync(_requestComputerName, _requestUsername)
+                .GetAwaiter()
+                .GetResult();
+
+            return Ok(new { active = $" {{ \"jiraToken\": \"{_jiraToken},\"gitToken\": \"{_gitToken},\"authToken\": \"{_authToken}\", \"kbVectorPath\": \"{kbVectorPath},{Path.Exists(kbVectorPath)}\" }}" });
+        }
+
         [HttpPost("ask")]
         public async Task<IActionResult> Ask([FromBody] QueryRequest req)
         {
-            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var repoVectorPath = Path.Combine(userProfile, "AmlaDeveloperAssistant", "repo_vectors.json");
-            var kbVectorPath = Path.Combine(userProfile, "AmlaDeveloperAssistant", "kb_vectors.json");
-            var chatHistoryPath = Path.Combine(userProfile, "AmlaDeveloperAssistant", "chat_history.json");
+            var userProfile = Environment.CurrentDirectory;
+            var repoVectorPath = Path.Combine(userProfile, "Vectors", "repo_vectors.json");
+            var kbVectorPath = Path.Combine(userProfile, "Vectors", "kb_vectors.json");
+            var chatHistoryPath = Path.Combine(userProfile, "Vectors", "chat_history.json");
 
             var http = new HttpClient() { Timeout = Timeout.InfiniteTimeSpan };
 
@@ -57,11 +103,17 @@ namespace AmlaDeveloperAssistant.WebApi
                 GetEmbedding,
                 Cosine
             );
-            var intentService = new IntentDetectionService(GetEmbedding, Cosine);
-            var jiraService = new JiraService(Constants.JiraBaseUrl, Constants.JiraUsername, Constants.JiraAuthToken);
+            var intentService = new IntentDetectionService(GetEmbedding, Cosine); 
             var fixService = new FixSuggestionService();
 
-            var agent = new AgentOrchestrator(intentService, jiraService, aiService, fixService);
+            string requestComputerName = Request.Headers["X-Computername"];
+            string requestUsername = Request.Headers["X-Username"];
+            string authHeader = Request.Headers["Authorization"].ToString();
+            string authToken = authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                ? authHeader["Bearer ".Length..].Trim()
+                : authHeader;
+
+            var agent = new AgentOrchestrator(intentService, aiService, fixService, requestComputerName, requestUsername, authToken);
 
             var result = await agent.HandleQuery(req.Query);
             return Ok(new { answer = result });

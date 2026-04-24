@@ -1,4 +1,5 @@
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService();
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi(); // ✅ correct for .NET 9

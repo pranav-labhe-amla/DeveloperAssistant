@@ -4,7 +4,7 @@ namespace AmlaDeveloperAssistantApp.Services
     {
         public const string JiraBaseUrl = "https://amla.atlassian.net";
         public const string JiraUsername = "pranav.labhe@amla.io";
-        public const string JiraAuthToken = "ATATT3xFfGF0-f0vabMP76A2sabrZ0MUz6delnxT8fXshRjAe0r2zq9eO4pUdd7Vgu7jAF_1nnAq4P9dgkMSyxZlbRuRatDiIQwibOC4CcsaPIjISkxvRjKRJAUozcIANGVK1sNiB9d9WOS9wE0mX3b5AKDhnFlT14CSa2-D3a4jAeGWUl5tHEA=3C28ACAC";
+        public const string JiraAuthToken = "ATATT3xFfGF0vD4ubKLIrEtt_bVYJLfIwVHZ1RNh7IMarJlQuBnK1M6m0SsGW887QhfTpU4U-3XUcdFhuGn0PE35t9Z_Hu5K98gaYzhrFc4to-to96ux-6BzUNeZukyu48_qt_2MLwREuVcfHXiedYd2EhuNkrnIhuffo1qi5eWW6050Ts7yVvQ=51FB539E";
         // UI Message Constants
         public const string Thinking = "Thinking...💭 ";
         public const string ThinkingDeeper = "⚡ Thinking deeper...🧠\n";
