@@ -1,4 +1,4 @@
-﻿using System.Net.Http.Headers;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -9,16 +9,39 @@ class Program
     {
         Console.WriteLine("MCP Installer\n");
 
+
+        // -----------------------------
+        // STEP 0: TOKEN INPUT
+        // -----------------------------
+        Console.WriteLine("\n Enter tokens (type or right-click to paste):");
+
+        Console.Write("Jira Token:  ");
+        string jiraToken = ReadMasked();
+
+        Console.Write("Git Token:   ");
+        string gitToken = ReadMasked();
+
+        Console.Write("New MCP Password:        ");
+        string mcpToken = ReadMasked();
+
+        Console.Write("Confirm MCP Password:");
+        string mcpTokenConfirm = ReadMasked();
+
+        if (mcpToken != mcpTokenConfirm)
+        {
+            Console.WriteLine("\n MCP passwords do not match. Aborting.");
+
+            Console.WriteLine("\nPress any key to exit...");
+            Console.ReadKey(intercept: true);
+
+            return 1;
+        }
+
         // -----------------------------
         // STEP 1: Scope Selection
         // -----------------------------
-        Console.WriteLine("Select setup scope:");
-        Console.WriteLine("1. Workspace");
-        Console.WriteLine("2. Global (recommended)");
-        Console.Write("> ");
-
-        var choice = Console.ReadLine();
-        bool isGlobal = choice == "2";
+        Console.WriteLine("Installing the MCP tool and custom github copilot agent.");
+        bool isGlobal = true;
 
         Console.WriteLine(isGlobal
             ? "\n Using GLOBAL scope\n"
@@ -31,88 +54,32 @@ class Program
         var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
 
-        string mcpPath = isGlobal
-            ? Path.Combine(appData, "Code", "User", "mcp.json")
-            : Path.Combine(cwd, ".vscode", "mcp.json");
+        // Each entry is (mcpPath, agentPath, label)
+        List<(string mcpPath, string agentPath, string label)> targets = isGlobal
+            ? [
+                (
+                    Path.Combine(appData, "Code", "User", "mcp.json"),
+                    Path.Combine(userProfile, ".copilot", "agents", "Amlifi.agent.md"),
+                    "VS Code (global)"
+                ),
+                (
+                    Path.Combine(userProfile, ".mcp.json"),              // Visual Studio: %USERPROFILE%\.mcp.json
+                    Path.Combine(userProfile, ".github", "agents", "Amlifi.agent.md"),
+                    "Visual Studio (global)"
+                )
+              ]
+            : [
+                (
+                    Path.Combine(cwd, ".vscode", "mcp.json"),
+                    Path.Combine(cwd, ".github", "agents", "Amlifi.agent.md"),
+                    "Workspace"
+                )
+              ];
 
-        string agentPath = isGlobal
-            ? Path.Combine(userProfile, ".copilot", "agents", "Amlifi.agent.md")
-            : Path.Combine(cwd, ".github", "agents", "Amlifi.agent.md");
 
-        Directory.CreateDirectory(Path.GetDirectoryName(mcpPath)!);
-        Directory.CreateDirectory(Path.GetDirectoryName(agentPath)!);
-
-        // -----------------------------
-        // STEP 3: MCP CONFIG
-        // -----------------------------
-        Console.WriteLine(" Configuring MCP...");
-
-        JsonObject root;
-
-        if (File.Exists(mcpPath))
+        foreach (var (mcpPath, agentPath, label) in targets)
         {
-            try
-            {
-                var text = await File.ReadAllTextAsync(mcpPath);
-                root = JsonNode.Parse(text)?.AsObject() ?? new JsonObject();
-                Console.WriteLine(" Loaded existing MCP config");
-            }
-            catch
-            {
-                Console.WriteLine(" Invalid JSON, recreating...");
-                root = new JsonObject();
-            }
-        }
-        else
-        {
-            Console.WriteLine(" Creating new MCP config");
-            root = new JsonObject();
-        }
-
-        if (root["servers"] is not JsonObject servers)
-        {
-            servers = new JsonObject();
-            root["servers"] = servers;
-        }
-
-        const string serverName = "Amlifi";
-
-        if (servers[serverName] == null)
-        {
-            servers[serverName] = new JsonObject
-            {
-                ["url"] = "http://ollama-test.amla.io:5216/api/mcp",
-                ["type"] = "http",
-                ["headers"] = new JsonObject
-                {
-                    ["Authorization"] = "Bearer ${env:AMLIFI_MCP_TOKEN}",
-                    ["X-Computername"] = "${env:COMPUTERNAME}",
-                    ["X-Username"] = "${env:USERNAME}"
-                }
-            };
-            Console.WriteLine($" MCP server added at {mcpPath}");
-        }
-        else
-        {
-            Console.WriteLine($" MCP server already exists → {mcpPath}, skipping");
-        }
-
-        if (File.Exists(mcpPath))
-        {
-            File.Copy(mcpPath, mcpPath + ".bak", overwrite: true);
-        }
-
-        await File.WriteAllTextAsync(mcpPath,
-            root.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
-
-        Console.WriteLine($" MCP config saved → {mcpPath}");
-
-        // -----------------------------
-        // STEP 4: AGENT SETUP
-        // -----------------------------
-        Console.WriteLine("\n Configuring agent...");
-
-        string agentContent = """
+            string agentContent = """
             ---
             name: Amlifi
             description: Assistant of the Amla employee. can help with Jira tickets, and knowledge base queries
@@ -141,30 +108,127 @@ class Program
             - Do not imagine or make up information that is not in the response
             - Mention estimated time to complete the task if applicable for new employees
             """;
+            if(label == "Visual Studio (global)")
+            {
+                agentContent = """
+                ---
+                name: Amlifi
+                description: Assistant of the Amla employee. can help with Jira tickets, and knowledge base queries
+                tools: 
+                    - 'amlifi/askAgent'
+                ---
+                ## Core Instruction
+                - For EVERY user query:
+                  - Use the `amlifi/askAgent` tool with the user's input as the `query` parameter
+                  - Example: `amlifi/askAgent({ "query": "<user_input>" })`
+                - Use the tool response as context
+                - Use response or expanded response as context
+                - If it is a bug or error:
+                  - Clearly suggest a fix and provide the code snippet in markdown format
+                - If you are mentioning Frontend or Backend:
+                  - Specify exact file and method you are referring to
+                - If you are mentioning code:
+                  - Provide the code snippet in markdown format
+                - Be specific and detailed
+                - If you are suggesting an approach:
+                  - Try to implement it and provide the code snippet in markdown format
+                - If you have specific methods in your knowledge base:
+                  - Use them and provide examples
+                - Suggest changes to the code if applicable
+                - Provide alternative solutions if applicable
+                - Do not imagine or make up information that is not in the response
+                """;
+            }
+            Console.WriteLine($"\n [{label}]");
 
-        if (File.Exists(agentPath))
-        {
-            Console.WriteLine($" Agent file already exists → {agentPath}, skipping");
-        }
-        else
-        {
+            Directory.CreateDirectory(Path.GetDirectoryName(mcpPath)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(agentPath)!);
+
+            // -----------------------------
+            // STEP 3: MCP CONFIG
+            // -----------------------------
+            Console.WriteLine(" Configuring MCP...");
+
+            JsonObject root;
+
+            if (File.Exists(mcpPath))
+            {
+                try
+                {
+                    var text = await File.ReadAllTextAsync(mcpPath);
+                    root = JsonNode.Parse(text)?.AsObject() ?? new JsonObject();
+                    Console.WriteLine($" Loaded existing MCP config ? {mcpPath}");
+                }
+                catch
+                {
+                    Console.WriteLine(" Invalid JSON, recreating...");
+                    root = new JsonObject();
+                }
+            }
+            else
+            {
+                Console.WriteLine(" Creating new MCP config");
+                root = new JsonObject();
+            }
+
+            if (root["servers"] is not JsonObject servers)
+            {
+                servers = new JsonObject();
+                root["servers"] = servers;
+            }
+
+            const string serverName = "Amlifi";
+
+            if (servers[serverName] == null)
+            {
+                servers[serverName] = new JsonObject
+                {
+                    ["url"] = "http://ollama-test.amla.io:5216/api/mcp",
+                    ["type"] = "http",
+                    ["headers"] = new JsonObject
+                    {
+                        ["Authorization"] = "Bearer ${env:AMLIFI_MCP_TOKEN}",
+                        ["X-Computername"] = "${env:COMPUTERNAME}",
+                        ["X-Username"] = "${env:USERNAME}"
+                    }
+                };
+                if(label == "Visual Studio (global)")
+                {
+                    ((JsonObject)servers[serverName])["headers"] = new JsonObject
+                    {
+                        ["Authorization"] = $"Bearer {mcpToken}",
+                        ["X-Computername"] = $"{Environment.GetEnvironmentVariable("COMPUTERNAME")}",
+                        ["X-Username"] = $"{Environment.GetEnvironmentVariable("USERNAME")}"
+                    };
+                }
+                Console.WriteLine($" MCP server added ? {mcpPath}");
+            }
+            else
+            {
+                Console.WriteLine($" MCP server already exists ? {mcpPath}, skipping");
+            }
+
+            if (File.Exists(mcpPath))
+            {
+                File.Copy(mcpPath, mcpPath + ".bak", overwrite: true);
+            }
+
+            await File.WriteAllTextAsync(mcpPath,
+                root.ToJsonString(new JsonSerializerOptions { WriteIndented = true, IndentSize = 2 }));
+
+            Console.WriteLine($" MCP config saved ? {mcpPath}");
+
+            // -----------------------------
+            // STEP 4: AGENT SETUP
+            // -----------------------------
+            Console.WriteLine(" Configuring agent...");
+
+            bool agentExists = File.Exists(agentPath);
             await File.WriteAllTextAsync(agentPath, agentContent);
-            Console.WriteLine($" Agent file created → {agentPath}");
+            Console.WriteLine(agentExists
+                ? $" Agent file updated ? {agentPath}"
+                : $" Agent file created ? {agentPath}");
         }
-
-        // -----------------------------
-        // STEP 5: TOKEN INPUT
-        // -----------------------------
-        Console.WriteLine("\n Enter tokens (type or right-click to paste):");
-
-        Console.Write("Jira Token:  ");
-        string jiraToken = ReadMasked();
-
-        Console.Write("Git Token:   ");
-        string gitToken = ReadMasked();
-
-        Console.Write("MCP Token:   ");
-        string mcpToken = ReadMasked();
 
         // -----------------------------
         // STEP 6: REGISTER TOKENS
@@ -206,11 +270,28 @@ class Program
         // -----------------------------
         // DONE
         // -----------------------------
+
+        // Persist MCP token as a User-scoped environment variable so VS Code
+        // can resolve ${env:AMLIFI_MCP_TOKEN} in mcp.json without manual setup.
+        try
+        {
+            Environment.SetEnvironmentVariable("AMLIFI_MCP_TOKEN", mcpToken, EnvironmentVariableTarget.User);
+            Console.WriteLine("\n AMLIFI_MCP_TOKEN environment variable set for current user");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"\n Could not set AMLIFI_MCP_TOKEN: {ex.Message}");
+            Console.WriteLine("  Set it manually: [System.Environment]::SetEnvironmentVariable('AMLIFI_MCP_TOKEN','<token>','User')");
+        }
+
         Console.WriteLine("\n Setup complete!");
         Console.WriteLine("\n Next steps:");
-        Console.WriteLine("  1. Open VS Code");
-        Console.WriteLine("  2. Open GitHub Copilot Chat");
-        Console.WriteLine("  3. Use the MCP server via agent mode or prompts");
+        Console.WriteLine("  1. Restart VS Code / Visual Studio (or system) so it picks up the new environment variable");
+        Console.WriteLine("  2. Open GitHub Copilot Chat in either IDE");
+        Console.WriteLine("  3. Switch to Agent mode and select @Amlifi");
+
+        Console.WriteLine("\nPress any key to exit...");
+        Console.ReadKey(intercept: true);
 
         return 0;
     }

@@ -110,6 +110,7 @@ namespace AmlaDeveloperAssistantApp.Services
 
         private string ExtractDescription(JsonElement fields)
         {
+            string description = null;
             try
             {
                 if (fields.TryGetProperty("description", out var descField) && descField.ValueKind != JsonValueKind.Null)
@@ -122,54 +123,41 @@ namespace AmlaDeveloperAssistantApp.Services
                         {
                             ExtractTextFromADF(block, sb);
                         }
-                        return sb.ToString().Trim();
+                        description = sb.ToString().Trim();
                     }
                     else
                     {
-                        return descField.GetString() ?? "";
+                        description = descField.GetString() ?? "";
                     }
+                }
+                if (fields.TryGetProperty("comment", out var commentField) && commentField.ValueKind != JsonValueKind.Null)
+                {
+                    description = description != null ? description + "\n comments:\n" : "";
+
+                    var sb = new StringBuilder();
+                    ExtractTextFromADF(commentField, sb);
+                    description = description+sb.ToString().Trim();
                 }
             }
             catch { }
 
-            return "";
+            return description ?? "";
         }
 
         private void ExtractTextFromADF(JsonElement element, StringBuilder sb)
         {
             try
             {
-                if (element.TryGetProperty("type", out var typeField))
-                {
-                    var type = typeField.GetString();
+                var reader = new Utf8JsonReader(Encoding.UTF8.GetBytes(element.GetRawText()));
 
-                    if (type == "paragraph" && element.TryGetProperty("content", out var content))
+                while (reader.Read())
+                {
+                    if (reader.TokenType == JsonTokenType.PropertyName
+                        && reader.GetString() == "text"
+                        && reader.Read()
+                        && reader.TokenType == JsonTokenType.String)
                     {
-                        foreach (var item in content.EnumerateArray())
-                        {
-                            if (item.TryGetProperty("type", out var itemType) && itemType.GetString() == "text")
-                            {
-                                if (item.TryGetProperty("text", out var text))
-                                {
-                                    sb.Append(text.GetString());
-                                }
-                            }
-                        }
-                        sb.AppendLine();
-                    }
-                    else if ((type == "heading" || type == "blockquote") && element.TryGetProperty("content", out var headingContent))
-                    {
-                        foreach (var item in headingContent.EnumerateArray())
-                        {
-                            if (item.TryGetProperty("type", out var itemType) && itemType.GetString() == "text")
-                            {
-                                if (item.TryGetProperty("text", out var text))
-                                {
-                                    sb.Append(text.GetString());
-                                }
-                            }
-                        }
-                        sb.AppendLine();
+                        sb.Append(reader.GetString());
                     }
                 }
             }

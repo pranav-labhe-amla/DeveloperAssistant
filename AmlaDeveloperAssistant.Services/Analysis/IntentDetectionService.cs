@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace AmlaDeveloperAssistantApp.Services
@@ -8,6 +9,11 @@ namespace AmlaDeveloperAssistantApp.Services
     {
         private readonly Func<string, Task<float[]>> _getEmbedding;
         private readonly Func<float[], float[], double> _cosineSimilarity;
+
+        private static readonly Regex PullRequestUrlRegex = new(
+            @"https:\/\/github\.com\/([\w\-\.]+)\/([\w\-\.]+)\/pull\/(\d+)",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled
+        );
 
         public IntentDetectionService(Func<string, Task<float[]>> getEmbedding, Func<float[], float[], double> cosineSimilarity)
         {
@@ -97,6 +103,24 @@ namespace AmlaDeveloperAssistantApp.Services
                 if (similarity > 0.60)
                     return true;
             }
+            return false;
+        }
+
+        /// <summary>
+        /// Returns true and populates the out parameters when the input contains a GitHub PR URL.
+        /// </summary>
+        public bool TryExtractPullRequestUrl(string input, out string owner, out string repo, out string prNumber)
+        {
+            var match = PullRequestUrlRegex.Match(input);
+            if (match.Success)
+            {
+                owner    = match.Groups[1].Value;
+                repo     = match.Groups[2].Value;
+                prNumber = match.Groups[3].Value;
+                return true;
+            }
+
+            owner = repo = prNumber = string.Empty;
             return false;
         }
     }
